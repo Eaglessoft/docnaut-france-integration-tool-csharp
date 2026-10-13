@@ -1,0 +1,68 @@
+@page
+@model IndexModel
+@{ ViewData["Title"] = "Operations"; }
+<div class="toolbar"><h1>Client API console</h1><div class="identity">@Model.Environment
+<form method="post" asp-page-handler="Logout"><button class="secondary" type="submit">Sign out</button></form></div></div>
+@if (Model.Environment == "Production") { <div class="production" role="status">Production — requests can change real documents and settings.</div> }
+<div class="console">
+<nav aria-label="API operations">
+@foreach (var group in Model.Operations.GroupBy(operation => operation.Group))
+{
+    <h2>@group.Key</h2>
+    @foreach (var operation in group)
+    {
+        <a asp-page="/Index" asp-route-operation="@operation.Id" class="@(Model.Selected?.Id == operation.Id ? "selected" : "")">@operation.Label</a>
+    }
+}
+</nav>
+<section>
+@if (Model.Selected is { } selected)
+{
+    <p class="eyebrow">@selected.Method</p><h2>@selected.Label</h2><code>@selected.PathTemplate</code>
+    <form method="post" asp-page-handler="Execute" enctype="multipart/form-data" class="request">
+        <input type="hidden" asp-for="Input.OperationId" />
+        @foreach (var name in selected.PathParameters)
+        {
+            <label for="path-@name">@name</label>
+            <input id="path-@name" name="Input.Path[@name]" value="@Model.Input.Path.GetValueOrDefault(name)" required />
+        }
+        @foreach (var name in selected.QueryParameters)
+        {
+            <label for="query-@name">@name <span class="muted">(query)</span></label>
+            <input id="query-@name" name="Input.Query[@name]" value="@Model.Input.Query.GetValueOrDefault(name)" />
+        }
+        @if (selected.RequiresIdempotencyKey)
+        {
+            <label asp-for="Input.IdempotencyKey">Idempotency key</label>
+            <input asp-for="Input.IdempotencyKey" required />
+            <small>Choose a stable unique key. Reuse it only for an identical request.</small>
+        }
+        @if (selected.RequiresIfMatch)
+        {
+            <label asp-for="Input.IfMatch">If-Match</label><input asp-for="Input.IfMatch" required />
+        }
+        @if (selected.BodyKind is BodyKind.Json or BodyKind.Xml || (selected.BodyKind == BodyKind.Multipart && selected.PathTemplate.Contains("reporting-periods")))
+        {
+            <label asp-for="Input.Body">@(selected.BodyKind == BodyKind.Xml ? "XML" : "JSON") request body</label>
+            <textarea asp-for="Input.Body" rows="16" spellcheck="false"></textarea>
+        }
+        @if (selected.BodyKind == BodyKind.Multipart)
+        {
+            <label asp-for="Input.Upload">Source file</label><input asp-for="Input.Upload" type="file" required />
+            <small>Up to 100 MiB for documents; 10 MiB for reporting XML.</small>
+        }
+        <button type="submit">Send request</button>
+    </form>
+}
+@if (Model.Error != null) { <div class="error" role="alert">@Model.Error</div> }
+@if (Model.ResponseStatusCode != null)
+{
+    <section class="response"><h2>Response <span class="status">@Model.ResponseStatusCode</span></h2>
+    @if (Model.ResponseHeaders != null)
+    {
+        <dl>@foreach (var header in Model.ResponseHeaders) { <dt>@header.Key</dt><dd>@header.Value</dd> }</dl>
+    }
+    <pre>@Model.ResponseBody</pre></section>
+}
+</section>
+</div>

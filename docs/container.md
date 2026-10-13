@@ -1,0 +1,91 @@
+# Container image
+
+The image runs the web console on port **8080** as the .NET image's non-root application user.
+It contains the published application and ASP.NET Core 10 runtime. Build tools, feature fixtures and
+credentials are not copied into the runtime image. No database or persistent volume is required.
+
+## Run a published image
+
+The workflow publishes to:
+
+```text
+ghcr.io/eaglessoft/docnaut-france-integration-tool-csharp
+```
+
+After the first successful publishing workflow and public package visibility are confirmed:
+
+```sh
+docker run --rm --publish 127.0.0.1:8093:8080 \
+  ghcr.io/eaglessoft/docnaut-france-integration-tool-csharp:latest
+```
+
+Open [http://localhost:8093](http://localhost:8093). Sign in with service-client credentials through the
+console; credentials are held in application memory for the session, not baked into the image.
+Stopping or replacing the container clears sessions. The loopback port mapping keeps this example local.
+
+## Build locally
+
+Run from the standalone source root:
+
+```sh
+docker build --tag docnaut-france-integration-tool:local .
+docker run --rm --publish 127.0.0.1:8093:8080 docnaut-france-integration-tool:local
+```
+
+The multi-stage Dockerfile restores and publishes the console and its SDK project reference, then
+copies only the publish output into the runtime stage. `.dockerignore` excludes local build output,
+local settings and common credential file types. Do not put credentials in tracked application settings.
+
+## Runtime settings
+
+The normal Sandbox and Production defaults are included. Override endpoints with ordinary ASP.NET Core
+environment variables when running the container; there are no credential build arguments or image-build
+secrets. For example, with URLs for your own deployment:
+
+```sh
+docker run --rm --publish 127.0.0.1:8093:8080 \
+  --env Environments__Sandbox__ApiBaseUrl=https://api.example.com/client/api/v1/ \
+  --env Environments__Sandbox__TokenUrl=https://identity.example.com/oauth/token \
+  docnaut-france-integration-tool:local
+```
+
+The corresponding Production keys are `Environments__Production__ApiBaseUrl` and
+`Environments__Production__TokenUrl`. URLs must satisfy the SDK's HTTPS requirements. A loopback URL
+inside the container refers to that container, not to the Docker host.
+
+The entrypoint explicitly sets `--urls http://0.0.0.0:8080`, overriding the development loopback setting
+in `appsettings.json`. Change the host-side published port as needed; `ASPNETCORE_URLS` does not override
+this command-line setting. For an HTTPS reverse proxy, configure `AllowedHosts` for the actual public host
+and follow the [configuration guide](configuration.md). Do not expose the console publicly with the
+local HTTP example unchanged.
+
+## GitHub Actions publishing
+
+`.github/workflows/container.yml` runs on main pushes, `v*` tags, pull requests to main and manual dispatch.
+Its validation job builds the Release solution, runs the executable feature journeys, builds the image
+and checks that it starts as non-root and serves the sign-in page.
+
+Publishing requires that validation job to pass. Only main or `v*` tag runs publish; pull requests and
+manual runs on other branches validate without publishing. Image tags are:
+
+| Git reference | Image tags |
+|---|---|
+| `main` | `latest` and `sha-<full commit SHA>` |
+| `v*` release tag | The exact Git tag and `sha-<full commit SHA>` |
+
+The SHA tag identifies the source revision. Use a registry digest when you need an immutable deployment
+reference. A main build updates `latest`; creating a release tag does not change `latest`.
+
+Only the publish job has `packages: write`. Registry authentication uses the repository's automatically
+provided `GITHUB_TOKEN`; no personal access token or registry password is configured. Actions are pinned
+to release commit SHAs. OCI labels link the image to this source repository and identify the MIT license.
+
+Repository or organization policies must permit Actions and GHCR package publishing. GitHub container
+packages can initially be private even for a public repository. After the first publication, an owner
+should confirm the package visibility is **Public** if anonymous pulls are intended.
+
+Workflow actions and container behavior follow the official
+[Docker build/push action](https://github.com/docker/build-push-action),
+[Docker metadata action](https://github.com/docker/metadata-action),
+[.NET setup action](https://github.com/actions/setup-dotnet) and
+[Microsoft container documentation](https://learn.microsoft.com/en-us/dotnet/core/docker/build-container).

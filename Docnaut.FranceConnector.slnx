@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Docnaut.FranceConnector.Sdk/Docnaut.FranceConnector.Sdk.csproj" />
+  <Project Path="Docnaut.FranceConnector.TestTool/Docnaut.FranceConnector.TestTool.csproj" />
+  <Project Path="Docnaut.FranceConnector.FeatureTests/Docnaut.FranceConnector.FeatureTests.csproj" />
+</Solution>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Docnaut.FranceConnector.Sdk</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Docnaut</Authors>
+    <PackageProjectUrl>https://github.com/Eaglessoft/docnaut-france-integration-tool-csharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Eaglessoft/docnaut-france-integration-tool-csharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Description>Dependency-free client for the Docnaut France Connector Client API.</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+</Project>

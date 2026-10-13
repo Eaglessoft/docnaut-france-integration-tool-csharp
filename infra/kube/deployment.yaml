@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docnaut-france-integration-tool
+  labels:
+    app.kubernetes.io/name: docnaut-france-integration-tool
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: docnaut-france-integration-tool
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: docnaut-france-integration-tool
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: test-tool
+          image: ghcr.io/eaglessoft/docnaut-france-integration-tool-csharp:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: AllowedHosts
+              value: "localhost;127.0.0.1"
+            - name: Environments__Sandbox__ApiBaseUrl
+              value: https://france-staging.docnaut.com/client/api/v1/
+            - name: Environments__Sandbox__TokenUrl
+              value: https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token
+            - name: Environments__Production__ApiBaseUrl
+              value: https://france.docnaut.com/client/api/v1/
+            - name: Environments__Production__TokenUrl
+              value: https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /Login
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /Login
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /Login
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 20
+            timeoutSeconds: 3

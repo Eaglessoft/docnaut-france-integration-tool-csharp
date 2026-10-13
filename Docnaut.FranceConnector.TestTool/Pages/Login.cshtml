@@ -1,0 +1,19 @@
+@page
+@model LoginModel
+@{ ViewData["Title"] = "Sign in"; }
+<section class="login">
+<p class="eyebrow">Service client access</p>
+<h1>Connect to your environment</h1>
+<p>Requests run on this server. Credentials stay in server memory and expire after 30 minutes of inactivity.</p>
+@if (Model.Error != null) { <div role="alert" class="error">@Model.Error</div> }
+<form method="post">
+<label asp-for="Environment">Environment</label>
+<select asp-for="Environment"><option>Sandbox</option><option>Production</option></select>
+<label asp-for="ClientId">Client ID</label>
+<input asp-for="ClientId" required autocomplete="off" />
+<label asp-for="ClientSecret">Client secret</label>
+<input name="ClientSecret" id="ClientSecret" type="password" required autocomplete="off" value="" />
+<button type="submit">Connect</button>
+</form>
+<p class="muted">Production actions affect real data. Sign out before changing environments.</p>
+</section>
