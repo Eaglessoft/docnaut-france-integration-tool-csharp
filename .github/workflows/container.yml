@@ -40,7 +40,7 @@ jobs:
           trap 'docker stop "$container" >/dev/null' EXIT
           test "$(docker exec "$container" id -u)" != '0'
           port=$(docker port "$container" 8080/tcp | cut -d: -f2)
-          curl --fail --silent --show-error --retry 20 --retry-connrefused --retry-delay 1 \
+          curl --fail --silent --show-error --retry 20 --retry-all-errors --retry-delay 1 --max-time 5 --retry-max-time 60 \
             "http://127.0.0.1:$port/Login" --output /dev/null
 
   publish:
