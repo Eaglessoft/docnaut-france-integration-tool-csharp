@@ -41,9 +41,9 @@ static string Required(string name) => Environment.GetEnvironmentVariable(name)
     ?? throw new InvalidOperationException($"Set {name} before running this example.");
 
 using var client = new ConnectorClient(
-    new ConnectorEndpoint(Required("CONNECTOR_API_URL"), Required("CONNECTOR_TOKEN_URL")),
-    Required("CONNECTOR_CLIENT_ID"),
-    Required("CONNECTOR_CLIENT_SECRET"));
+    new ConnectorEndpoint(Required("DOCNAUT_API_BASE_URL"), Required("DOCNAUT_TOKEN_URL")),
+    Required("DOCNAUT_CLIENT_ID"),
+    Required("DOCNAUT_CLIENT_SECRET"));
 
 using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 CancellationToken cancellationToken = cancellation.Token;

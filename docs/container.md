@@ -44,13 +44,13 @@ secrets. For example, with URLs for your own deployment:
 
 ```sh
 docker run --rm --publish 127.0.0.1:8093:8080 \
-  --env Environments__Sandbox__ApiBaseUrl=https://api.example.com/client/api/v1/ \
-  --env Environments__Sandbox__TokenUrl=https://identity.example.com/oauth/token \
+  --env DOCNAUT_SANDBOX_API_BASE_URL=https://api.example.com/client/api/v1/ \
+  --env DOCNAUT_SANDBOX_TOKEN_URL=https://identity.example.com/oauth/token \
   docnaut-france-integration-tool:local
 ```
 
-The corresponding Production keys are `Environments__Production__ApiBaseUrl` and
-`Environments__Production__TokenUrl`. URLs must satisfy the SDK's HTTPS requirements. A loopback URL
+The corresponding Production keys are `DOCNAUT_PRODUCTION_API_BASE_URL` and
+`DOCNAUT_PRODUCTION_TOKEN_URL`. URLs must satisfy the SDK's HTTPS requirements. A loopback URL
 inside the container refers to that container, not to the Docker host.
 
 The entrypoint explicitly sets `--urls http://0.0.0.0:8080`, overriding the development loopback setting

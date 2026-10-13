@@ -107,9 +107,9 @@ start.Environment["DOTNET_ENVIRONMENT"] = "Development";
 start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
 foreach (var environment in new[] { "Sandbox", "Production" })
 {
-    start.Environment[$"Environments__{environment}__ApiBaseUrl"] = $"{address}/{environment}/client/api/v1/";
-    start.Environment[$"Environments__{environment}__TokenUrl"] = $"{address}/{environment}/token";
-    start.Environment[$"Environments__{environment}__AllowInsecureHttp"] = "true";
+    start.Environment[$"DOCNAUT_{environment.ToUpperInvariant()}_API_BASE_URL"] = $"{address}/{environment}/client/api/v1/";
+    start.Environment[$"DOCNAUT_{environment.ToUpperInvariant()}_TOKEN_URL"] = $"{address}/{environment}/token";
+    start.Environment[$"DOCNAUT_{environment.ToUpperInvariant()}_ALLOW_INSECURE_HTTP"] = "true";
 }
 using var app = Process.Start(start) ?? throw new InvalidOperationException("TestTool did not start");
 var output = new StringBuilder();

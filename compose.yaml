@@ -6,11 +6,11 @@ services:
     ports:
       - "127.0.0.1:8093:8080"
     environment:
-      AllowedHosts: "localhost;127.0.0.1"
-      Environments__Sandbox__ApiBaseUrl: ${CONNECTOR_SANDBOX_API_URL:-https://france-staging.docnaut.com/client/api/v1/}
-      Environments__Sandbox__TokenUrl: ${CONNECTOR_SANDBOX_TOKEN_URL:-https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token}
-      Environments__Production__ApiBaseUrl: ${CONNECTOR_PRODUCTION_API_URL:-https://france.docnaut.com/client/api/v1/}
-      Environments__Production__TokenUrl: ${CONNECTOR_PRODUCTION_TOKEN_URL:-https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token}
+      ALLOWEDHOSTS: "localhost;127.0.0.1"
+      DOCNAUT_SANDBOX_API_BASE_URL: ${DOCNAUT_SANDBOX_API_BASE_URL:-https://france-staging.docnaut.com/client/api/v1/}
+      DOCNAUT_SANDBOX_TOKEN_URL: ${DOCNAUT_SANDBOX_TOKEN_URL:-https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token}
+      DOCNAUT_PRODUCTION_API_BASE_URL: ${DOCNAUT_PRODUCTION_API_BASE_URL:-https://france.docnaut.com/client/api/v1/}
+      DOCNAUT_PRODUCTION_TOKEN_URL: ${DOCNAUT_PRODUCTION_TOKEN_URL:-https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token}
     security_opt:
       - no-new-privileges:true
     cap_drop:

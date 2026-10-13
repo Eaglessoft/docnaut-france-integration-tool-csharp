@@ -6,28 +6,31 @@ earlier ones. A file named `appsettings.Local.json` is not loaded automatically 
 
 ## Environment defaults
 
-| Setting | Sandbox | Production |
-|---|---|---|
-| `ApiBaseUrl` | `https://france-staging.docnaut.com/client/api/v1/` | `https://france.docnaut.com/client/api/v1/` |
-| `TokenUrl` | `https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token` | Same default token URL |
-| `AllowInsecureHttp` | `false` | `false` |
+| Configuration key / environment variable | Default |
+|---|---|
+| `DOCNAUT_SANDBOX_API_BASE_URL` | `https://france-staging.docnaut.com/client/api/v1/` |
+| `DOCNAUT_PRODUCTION_API_BASE_URL` | `https://france.docnaut.com/client/api/v1/` |
+| `DOCNAUT_SANDBOX_TOKEN_URL` | `https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token` |
+| `DOCNAUT_PRODUCTION_TOKEN_URL` | Same default token URL |
+| `DOCNAUT_SANDBOX_ALLOW_INSECURE_HTTP` | `false` |
+| `DOCNAUT_PRODUCTION_ALLOW_INSECURE_HTTP` | `false` |
 
 These are client configuration defaults, not an availability guarantee. Login selects one of these two configured
 sets; it does not accept an arbitrary URL. The API base URL must end in `/client/api/v1/`.
 
-Override one value using a double underscore for each configuration separator:
+Integration settings use flat uppercase `DOCNAUT_` keys with single underscores. Override them directly:
 
 ```sh
 # POSIX shell; example custom Sandbox deployment
-export Environments__Sandbox__ApiBaseUrl=https://api.example.com/client/api/v1/
-export Environments__Sandbox__TokenUrl=https://identity.example.com/oauth/token
+export DOCNAUT_SANDBOX_API_BASE_URL=https://api.example.com/client/api/v1/
+export DOCNAUT_SANDBOX_TOKEN_URL=https://identity.example.com/oauth/token
 dotnet run --project Docnaut.FranceConnector.TestTool
 ```
 
-In PowerShell, use `$env:Environments__Sandbox__ApiBaseUrl = 'https://api.example.com/client/api/v1/'`.
+In PowerShell, use `$env:DOCNAUT_SANDBOX_API_BASE_URL = 'https://api.example.com/client/api/v1/'`.
 Set the matching token URL as well. Example domains are placeholders, not working services.
 
-HTTPS is required for remote API/token endpoints. `AllowInsecureHttp=true` permits HTTP only for explicit
+HTTPS is required for remote API/token endpoints. The selected environment’s `DOCNAUT_*_ALLOW_INSECURE_HTTP=true` permits HTTP only for explicit
 loopback fixtures; it does not disable certificate validation or enable remote HTTP endpoints.
 
 ## Listener and hosting
@@ -41,7 +44,7 @@ dotnet run --project Docnaut.FranceConnector.TestTool -- --urls http://127.0.0.1
 `run-dev.sh` listens on `0.0.0.0:8083` for container development. This binds all network interfaces; control network exposure in your development environment.
 The packaged image listens on port 8080; see [container instructions](container.md) for host port mapping.
 
-`AllowedHosts` defaults to `localhost;127.0.0.1`. A hosted deployment needs the actual host allowlist and HTTPS.
+The framework host setting `AllowedHosts` (environment variable `ALLOWEDHOSTS`) defaults to `localhost;127.0.0.1`. A hosted deployment needs the actual host allowlist and HTTPS.
 The console does not configure reverse-proxy trust, forwarded headers, durable sessions or multiple instances.
 Account for these explicitly before hosting beyond local development; the shipped configuration is a local test tool.
 

@@ -19,10 +19,10 @@ normal Sandbox and Production endpoints. Optional Compose variables are:
 | Variable | Overrides |
 |---|---|
 | `DOCNAUT_CLIENT_IMAGE` | Container image; defaults to `ghcr.io/eaglessoft/docnaut-france-integration-tool-csharp:latest` |
-| `CONNECTOR_SANDBOX_API_URL` | Sandbox Client API base URL |
-| `CONNECTOR_SANDBOX_TOKEN_URL` | Sandbox OAuth URL |
-| `CONNECTOR_PRODUCTION_API_URL` | Production Client API base URL |
-| `CONNECTOR_PRODUCTION_TOKEN_URL` | Production OAuth URL |
+| `DOCNAUT_SANDBOX_API_BASE_URL` | Sandbox Client API base URL |
+| `DOCNAUT_SANDBOX_TOKEN_URL` | Sandbox OAuth URL |
+| `DOCNAUT_PRODUCTION_API_BASE_URL` | Production Client API base URL |
+| `DOCNAUT_PRODUCTION_TOKEN_URL` | Production OAuth URL |
 
 Supply URLs with the formats described in [configuration](configuration.md). These variables configure
 addresses, not credentials. For a local image build, for example:

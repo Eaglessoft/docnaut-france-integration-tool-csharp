@@ -31,15 +31,15 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: AllowedHosts
+            - name: ALLOWEDHOSTS
               value: "localhost;127.0.0.1"
-            - name: Environments__Sandbox__ApiBaseUrl
+            - name: DOCNAUT_SANDBOX_API_BASE_URL
               value: https://france-staging.docnaut.com/client/api/v1/
-            - name: Environments__Sandbox__TokenUrl
+            - name: DOCNAUT_SANDBOX_TOKEN_URL
               value: https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token
-            - name: Environments__Production__ApiBaseUrl
+            - name: DOCNAUT_PRODUCTION_API_BASE_URL
               value: https://france.docnaut.com/client/api/v1/
-            - name: Environments__Production__TokenUrl
+            - name: DOCNAUT_PRODUCTION_TOKEN_URL
               value: https://france.docnaut.com/sso/realms/docnaut/protocol/openid-connect/token
           resources:
             requests:

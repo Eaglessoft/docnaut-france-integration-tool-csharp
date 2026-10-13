@@ -16,13 +16,13 @@ public sealed class ConnectorConsole(IMemoryCache cache, IConfiguration configur
         Logout(session);
         if (environment is not ("Sandbox" or "Production") || string.IsNullOrWhiteSpace(clientId)
             || string.IsNullOrWhiteSpace(clientSecret)) return "Select an environment and enter both credentials.";
-        var section = configuration.GetSection("Environments:" + environment);
+        string prefix = "DOCNAUT_" + environment.ToUpperInvariant() + "_";
         ConnectorClient? client = null;
         try
         {
             client = new ConnectorClient(new ConnectorEndpoint(
-                section["ApiBaseUrl"] ?? "", section["TokenUrl"] ?? "",
-                section.GetValue<bool>("AllowInsecureHttp")), clientId, clientSecret);
+                configuration[prefix + "API_BASE_URL"] ?? "", configuration[prefix + "TOKEN_URL"] ?? "",
+                configuration.GetValue<bool>(prefix + "ALLOW_INSECURE_HTTP")), clientId, clientSecret);
             await client.AuthenticateAsync(cancellationToken);
             string id = Guid.NewGuid().ToString("N");
             var state = new Connection(environment, client);

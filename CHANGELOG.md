@@ -14,4 +14,6 @@ Changes to the SDK and test tool are recorded here. Package builds alone do not 
 - Multi-stage non-root Docker image and GitHub Actions publishing to GHCR.
 - Docker Compose and Kubernetes deployment examples with runtime environment configuration.
 
+- Uppercase `DOCNAUT_` integration environment variables shared by the console, Compose and Kubernetes.
+
 The current package build version is 0.1.0; no public release date is declared here.
