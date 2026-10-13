@@ -4,6 +4,12 @@ All paths and commands below are relative to this client project's root. Install
 with `global.json`. Windows, Linux and macOS use the same `dotnet` commands; the convenience scripts require
 a POSIX shell. No Java runtime, database or live API account is needed to build and test this project.
 
+## Dev Container
+
+Open this repository in a Dev Container using `.devcontainer/devcontainer.json`. It provides the pinned
+.NET SDK and forwards port 8083. Run `sh run-dev.sh` inside it to start the tool.
+This environment is independent of the Connector repository and its Java development container.
+
 ## Build and test
 
 ```sh

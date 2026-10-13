@@ -1,0 +1,13 @@
+{
+  "name": "Docnaut C# integration tool",
+  "image": "mcr.microsoft.com/dotnet/sdk:10.0.401",
+  "forwardPorts": [
+    8083
+  ],
+  "portsAttributes": {
+    "8083": {
+      "label": "C# integration tool",
+      "onAutoForward": "notify"
+    }
+  }
+}
