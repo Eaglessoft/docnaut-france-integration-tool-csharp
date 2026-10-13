@@ -3,6 +3,12 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
+var contextPathValue = (builder.Configuration["DOCNAUT_CONTEXT_PATH"] ?? "").TrimEnd('/');
+if (contextPathValue.Length > 0 && (!contextPathValue.StartsWith('/')
+    || contextPathValue[1..].Split('/').Any(segment => segment.Length == 0
+        || segment.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_'))))
+    throw new InvalidOperationException("DOCNAUT_CONTEXT_PATH must be empty, '/', or slash-separated letters, digits, '-' and '_'.");
+var contextPath = new PathString(contextPathValue);
 builder.Services.AddRazorPages();
 builder.Services.AddDataProtection().UseEphemeralDataProtectionProvider();
 builder.Services.AddDistributedMemoryCache();
@@ -11,6 +17,7 @@ builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.Name = "Docnaut.TestTool.Session";
+    options.Cookie.Path = contextPath.HasValue ? contextPath.Value! : "/";
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
     options.Cookie.SameSite = SameSiteMode.Strict;
@@ -20,6 +27,7 @@ builder.Services.Configure<FormOptions>(options => options.MultipartBodyLengthLi
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 101L * 1024 * 1024);
 builder.Services.AddSingleton<ConnectorConsole>();
 var app = builder.Build();
+if (contextPath.HasValue) app.UsePathBase(contextPath);
 app.UseExceptionHandler("/Error");
 app.Use(async (context, next) =>
 {

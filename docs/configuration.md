@@ -45,8 +45,28 @@ dotnet run --project Docnaut.FranceConnector.TestTool -- --urls http://127.0.0.1
 The packaged image listens on port 8080; see [container instructions](container.md) for host port mapping.
 
 The framework host setting `AllowedHosts` (environment variable `ALLOWEDHOSTS`) defaults to `localhost;127.0.0.1`. A hosted deployment needs the actual host allowlist and HTTPS.
-The console does not configure reverse-proxy trust, forwarded headers, durable sessions or multiple instances.
+The console does not configure a trusted proxy allowlist, durable sessions or multiple instances.
 Account for these explicitly before hosting beyond local development; the shipped configuration is a local test tool.
+
+## Context path behind a reverse proxy
+
+Set `DOCNAUT_CONTEXT_PATH=/france-integration-test` to host the console below a URL prefix.
+The default is empty (site root); `/` also selects the root. A non-root context starts with `/`
+and contains slash-separated letters, digits, hyphens or underscores. Trailing slashes are normalized.
+Invalid context values fail startup rather than generating inconsistent URLs.
+
+The reverse proxy must **preserve the prefix** when forwarding requests. The application separates
+the configured prefix into ASP.NET Core's `Request.PathBase` before static files and Razor routing.
+For example, `/france-integration-test/Login` reaches the login page. Navigation, form targets,
+static assets and redirects retain that prefix, and the session cookie is scoped to the context.
+Do not strip the prefix or rely on an `X-Forwarded-Prefix` header with this setting.
+
+For TLS termination at a trusted reverse proxy, `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` enables
+the framework's forwarded scheme handling so `SameAsRequest` session cookies use `Secure` for HTTPS.
+This switch accepts forwarded headers from any connecting proxy; use it only when network access to
+the backend is controlled and the proxy replaces client-supplied forwarded headers. It does not
+configure the context path. Set `ALLOWEDHOSTS` to the actual public host (for example `tools.docnaut.com`),
+and configure HTTPS at the edge. Keep probes on an explicitly allowed host.
 
 ## Credentials and sessions
 
