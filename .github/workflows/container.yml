@@ -28,8 +28,10 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Build solution
         run: dotnet build Docnaut.FranceConnector.slnx --configuration Release
-      - name: Run feature journeys
-        run: dotnet run --project Docnaut.FranceConnector.FeatureTests --configuration Release --no-build
+      - name: Run feature journeys at root and context path
+        run: |
+          dotnet run --project Docnaut.FranceConnector.FeatureTests --configuration Release --no-build
+          dotnet run --project Docnaut.FranceConnector.FeatureTests --configuration Release --no-build -- --context-path=/france-integration-test
       - name: Build image
         run: docker build --tag docnaut-france-integration-tool:test .
       - name: Verify non-root image startup
