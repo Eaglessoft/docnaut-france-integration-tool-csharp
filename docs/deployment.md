@@ -78,3 +78,20 @@ kubectl delete -k infra/kube
 
 For public hosting, configure HTTPS, host filtering and proxy trust for your deployment as described in
 [configuration](configuration.md). These local-access examples do not provide that hosting setup.
+
+### Hosting under a context path
+
+For `https://tools.docnaut.com/france-integration-test`, configure the Deployment with
+`DOCNAUT_CONTEXT_PATH=/france-integration-test` and `ALLOWEDHOSTS=tools.docnaut.com;localhost;127.0.0.1`.
+Keep the ingress path prefix when proxying to the Service; for Kong, set `konghq.com/strip-path: "false"`
+and `konghq.com/preserve-host: "true"`. The ingress route must match the context as a path prefix and
+reference the existing TLS secret in the workload namespace. Enforce HTTPS at the edge.
+
+When using the framework forwarded-header switch for HTTPS cookie handling, restrict backend access
+to trusted proxies as explained in the configuration guide. Probe `/france-integration-test/Login`
+with `Host: localhost` to exercise the configured context without calling the remote API.
+
+The ES-System production manifests are maintained separately. Merge the application context-path PR
+and confirm its main workflow has published the updated `latest` image **before** deploying a manifest
+that sets `DOCNAUT_CONTEXT_PATH`. A manifest referencing `latest` does not restart an existing pod when
+the tag changes; a new pod or an explicit operator-controlled rollout is required.

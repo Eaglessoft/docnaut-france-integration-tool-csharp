@@ -83,6 +83,8 @@ await fixture.StartAsync();
 var address = fixture.Services.GetRequiredService<IServer>().Features
     .Get<IServerAddressesFeature>()!.Addresses.Single();
 var serveBrowser = args.Contains("--serve-browser");
+var contextPath = args.SingleOrDefault(value => value.StartsWith("--context-path=", StringComparison.Ordinal))
+    ?["--context-path=".Length..].TrimEnd('/') ?? "";
 var appPort = serveBrowser ? 8083 : FreePort();
 var appUrl = $"http://127.0.0.1:{appPort}";
 #if DEBUG
@@ -105,6 +107,7 @@ start.ArgumentList.Add("--urls");
 start.ArgumentList.Add(serveBrowser ? "http://0.0.0.0:8083" : appUrl);
 start.Environment["DOTNET_ENVIRONMENT"] = "Development";
 start.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
+start.Environment["DOCNAUT_CONTEXT_PATH"] = contextPath;
 foreach (var environment in new[] { "Sandbox", "Production" })
 {
     start.Environment[$"DOCNAUT_{environment.ToUpperInvariant()}_API_BASE_URL"] = $"{address}/{environment}/client/api/v1/";
@@ -122,7 +125,7 @@ using var browser = new HttpClient(new HttpClientHandler
 }) { BaseAddress = new Uri(appUrl), Timeout = TimeSpan.FromSeconds(20) };
 try
 {
-    await WaitForApp(browser, app);
+    await WaitForApp(browser, app, contextPath);
     if (serveBrowser)
     {
         Console.WriteLine("Browser fixture: http://localhost:8083 — Sandbox or Production; demo client test-client / test-secret (local fake credentials only).");
@@ -131,9 +134,23 @@ try
         try { await Task.Delay(Timeout.Infinite, stop.Token); } catch (OperationCanceledException) { }
         return;
     }
+    using (var anonymous = await browser.GetAsync(AppPath("/")))
+    {
+        CheckAppRedirect(anonymous, "Anonymous access redirects within the application context");
+        Check(new Uri(browser.BaseAddress!, anonymous.Headers.Location!).AbsolutePath == AppPath("/Login"),
+            "Anonymous redirect retains the context path");
+    }
     var login = await Page("/Login");
+    foreach (var asset in new[] { "/bootstrap.min.css", "/site.css", "/docnaut-logo.webp" })
+    {
+        Check(login.Contains($"\"{AppPath(asset)}\"", StringComparison.Ordinal), $"Login references context asset {asset}");
+        using var response = await browser.GetAsync(AppPath(asset));
+        Check(response.IsSuccessStatusCode, $"Context asset {asset} is served");
+        Check(response.Content.Headers.ContentType?.MediaType == (asset.EndsWith(".css") ? "text/css" : "image/webp"),
+            $"Context asset {asset} has the expected content type");
+    }
     Check(!login.Contains("test-secret"), "Login page does not contain a secret");
-    using (var denied = await browser.PostAsync("/Login", new FormUrlEncodedContent(new Dictionary<string,string>
+    using (var denied = await browser.PostAsync(AppPath("/Login"), new FormUrlEncodedContent(new Dictionary<string,string>
         { ["Environment"]="Sandbox", ["ClientId"]="test-client", ["ClientSecret"]="test-secret" })))
         Check(denied.StatusCode == HttpStatusCode.BadRequest, "Login requires antiforgery");
     using (var invalid = await Post("/Login", login, new()
@@ -146,7 +163,14 @@ try
     login = await Page("/Login");
     using (var accepted = await Post("/Login", login, new()
         { ["Environment"]="Sandbox", ["ClientId"]="test-client", ["ClientSecret"]="test-secret" }))
-        Check(IsRedirect(accepted), "Valid credentials start a server session");
+    {
+        CheckAppRedirect(accepted, "Valid credentials start a server session");
+        var sessionCookie = accepted.Headers.GetValues("Set-Cookie")
+            .Single(value => value.StartsWith("Docnaut.TestTool.Session=", StringComparison.Ordinal));
+        var cookiePath = Regex.Match(sessionCookie, @"(?:^|;\s*)path=([^;]+)", RegexOptions.IgnoreCase);
+        Check(cookiePath.Success && cookiePath.Groups[1].Value == (contextPath.Length > 0 ? contextPath : "/"),
+            "Session cookie is scoped to the configured context");
+    }
 
     var index = await Page("/");
     Check(!index.Contains("test-secret") && !index.Contains("Sandbox-access-token"), "Session credentials stay off HTML");
@@ -157,7 +181,7 @@ try
     foreach (var operation in expectedOperations)
         Check(index.Contains(operation, StringComparison.Ordinal), $"UI includes {operation}");
     var before = calls.Count;
-    using (var denied = await browser.PostAsync("/?handler=Execute", new FormUrlEncodedContent(
+    using (var denied = await browser.PostAsync(AppPath("/?handler=Execute"), new FormUrlEncodedContent(
         new Dictionary<string,string> { ["Input.OperationId"]="replaceClientConfiguration", ["Input.Body"]="{\"preference\":true}" })))
         Check(denied.StatusCode == HttpStatusCode.BadRequest, "Mutations require antiforgery");
     Check(calls.Count == before, "CSRF rejection cannot reach Connector");
@@ -189,7 +213,7 @@ try
         var file = new ByteArrayContent(Encoding.UTF8.GetBytes("<invoice>uploaded</invoice>"));
         file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
         multipart.Add(file, "Input.Upload", "invoice.xml");
-        using var result = await browser.PostAsync("/?handler=Execute", multipart);
+        using var result = await browser.PostAsync(AppPath("/?handler=Execute"), multipart);
         Check(result.StatusCode == HttpStatusCode.OK, "Upload renders response");
     }
     Check(calls.Last() is { Path: "documents", FileName: "invoice.xml", IdempotencyKey: "feature-upload-1" } upload
@@ -205,7 +229,7 @@ try
         var file = new ByteArrayContent(Encoding.UTF8.GetBytes("<report>sales</report>"));
         file.Headers.ContentType = new MediaTypeHeaderValue("text/xml");
         multipart.Add(file, "Input.Upload", "report.xml");
-        using var result = await browser.PostAsync("/?handler=Execute", multipart);
+        using var result = await browser.PostAsync(AppPath("/?handler=Execute"), multipart);
         Check(result.StatusCode == HttpStatusCode.OK, "Browser XML report upload renders response");
     }
     Check(calls.Last() is { Path: "reporting-periods/2026-10/transmissions", FileName: "report.xml",
@@ -227,20 +251,20 @@ try
     }
     index = await Page("/");
     using (var logout = await Post("/?handler=Logout", index, new()))
-        Check(IsRedirect(logout), "Logout redirects");
-    using (var afterLogout = await browser.GetAsync("/"))
-        Check(IsRedirect(afterLogout), "Logout closes API session");
+        CheckAppRedirect(logout, "Logout redirects");
+    using (var afterLogout = await browser.GetAsync(AppPath("/")))
+        CheckAppRedirect(afterLogout, "Logout closes API session");
     login = await Page("/Login");
     using (var accepted = await Post("/Login", login, new()
         { ["Environment"]="Production", ["ClientId"]="test-client", ["ClientSecret"]="test-secret" }))
-        Check(IsRedirect(accepted), "Production login starts separate configured session");
+        CheckAppRedirect(accepted, "Production login starts separate configured session");
     index = await Page("/");
     using (var result = await Post("/?handler=Execute", index, new() { ["Input.OperationId"]="listDocuments" }))
         Check(result.IsSuccessStatusCode, "Production operation succeeds");
     Check(calls.Last().Environment == "Production", "Environment selection routes to configured production fixture");
     lock(output) Check(!output.ToString().Contains("test-secret") && !output.ToString().Contains("wrong-secret")
         && !output.ToString().Contains("-access-token"), "Application logs do not contain credentials");
-    Console.WriteLine("PASS: client feature HTTP journey (login, environments, CSRF, catalogue, JSON, idempotency, errors, upload, download, logout).");
+    Console.WriteLine($"PASS: client feature HTTP journey at context '{contextPath}' (assets, navigation, cookie scope, login, environments, CSRF, catalogue, JSON, idempotency, errors, upload, download, logout).");
 }
 finally
 {
@@ -250,14 +274,33 @@ finally
 }
 async Task<string> Page(string path)
 {
-    using var response = await browser.GetAsync(path);
+    using var response = await browser.GetAsync(AppPath(path));
     Check(response.IsSuccessStatusCode, $"GET {path} succeeds");
-    return await response.Content.ReadAsStringAsync();
+    var html = await response.Content.ReadAsStringAsync();
+    foreach (Match match in Regex.Matches(html, "(?:href|src|action)=\"([^\"]*)\""))
+    {
+        var value = WebUtility.HtmlDecode(match.Groups[1].Value);
+        if (value.Length > 0 && !value.StartsWith('#')) CheckContextUrl(new Uri(browser.BaseAddress!, value));
+    }
+    return html;
 }
 Task<HttpResponseMessage> Post(string path, string html, Dictionary<string,string> form)
 {
     form["__RequestVerificationToken"] = Token(html);
-    return browser.PostAsync(path, new FormUrlEncodedContent(form));
+    return browser.PostAsync(AppPath(path), new FormUrlEncodedContent(form));
+}
+string AppPath(string path) => contextPath + path;
+void CheckContextUrl(Uri url)
+{
+    Check(url.GetLeftPart(UriPartial.Authority) == browser.BaseAddress!.GetLeftPart(UriPartial.Authority),
+        "Generated navigation stays on the application origin");
+    Check(url.AbsolutePath == contextPath || url.AbsolutePath.StartsWith(contextPath + "/", StringComparison.Ordinal),
+        "Generated navigation retains the configured context path");
+}
+void CheckAppRedirect(HttpResponseMessage response, string message)
+{
+    Check(IsRedirect(response) && response.Headers.Location is not null, message);
+    CheckContextUrl(new Uri(browser.BaseAddress!, response.Headers.Location!));
 }
 static string Token(string html)
 {
@@ -275,13 +318,13 @@ static int FreePort()
     var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start();
     int port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop(); return port;
 }
-static async Task WaitForApp(HttpClient http, Process app)
+static async Task WaitForApp(HttpClient http, Process app, string contextPath)
 {
     var limit = DateTime.UtcNow.AddSeconds(30);
     while (DateTime.UtcNow < limit)
     {
         Check(!app.HasExited, "TestTool exited during startup");
-        try { using var response = await http.GetAsync("/Login"); if (response.IsSuccessStatusCode) return; }
+        try { using var response = await http.GetAsync(contextPath + "/Login"); if (response.IsSuccessStatusCode) return; }
         catch (HttpRequestException) { }
         await Task.Delay(100);
     }
