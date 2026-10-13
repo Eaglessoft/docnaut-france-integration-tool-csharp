@@ -61,20 +61,21 @@ local HTTP example unchanged.
 
 ## GitHub Actions publishing
 
-`.github/workflows/container.yml` runs on main pushes, `v*` tags, pull requests to main and manual dispatch.
+`.github/workflows/container.yml` runs only through **Actions → Validate and publish container → Run workflow**.
+Commits, pull requests and Git tags do not trigger it. Select the source branch when dispatching.
 Its validation job builds the Release solution, runs the executable feature journeys, builds the image
 and checks that it starts as non-root and serves the sign-in page.
 
-Publishing requires that validation job to pass. Only main or `v*` tag runs publish; pull requests and
-manual runs on other branches validate without publishing. Image tags are:
+Publishing requires validation to pass. Each successful manual run publishes the same image with two tags:
 
-| Git reference | Image tags |
+| Tag | Meaning |
 |---|---|
-| `main` | `latest` and `sha-<full commit SHA>` |
-| `v*` release tag | The exact Git tag and `sha-<full commit SHA>` |
+| `<build-number>` | This workflow's GitHub `run_number`, for example `12` |
+| `latest` | The most recently published manual build |
 
-The SHA tag identifies the source revision. Use a registry digest when you need an immutable deployment
-reference. A main build updates `latest`; creating a release tag does not change `latest`.
+The OCI image version also contains the build number. Java and C# use the same format with independent
+repository counters. A rerun keeps its original build number. Use a registry digest for an immutable deployment
+reference. Manual runs share one concurrency group so publication does not overlap.
 
 Only the publish job has `packages: write`. Registry authentication uses the repository's automatically
 provided `GITHUB_TOKEN`; no personal access token or registry password is configured. Actions are pinned
