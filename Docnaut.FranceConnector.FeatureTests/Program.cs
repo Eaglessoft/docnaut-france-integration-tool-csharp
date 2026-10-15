@@ -191,12 +191,35 @@ try
     Check(calls.Last() is { Environment: "Sandbox", Method: "PUT", Path: "configuration", Body: "{\"preference\":true}" },
         "Selected sandbox and exact JSON reach API");
     index = await Page("/");
-    using (var result = await Post("/?handler=Execute", index, new()
+    Check(!index.Contains("registerInvoicePayment"), "Removed payment operation is absent from the console");
+    before = calls.Count;
+    using (var removed = await Post("/?handler=Execute", index, new()
         { ["Input.OperationId"]="registerInvoicePayment", ["Input.Path[documentId]"]="00000000-0000-4000-8000-000000000001",
-          ["Input.Body"]="{\"paymentReference\":\"fixture\"}", ["Input.IdempotencyKey"]="feature-payment-1" }))
-        Check(result.StatusCode == HttpStatusCode.OK, "Payment response is shown");
-    Check(calls.Last() is { Method: "POST", Path: "documents/00000000-0000-4000-8000-000000000001/payments", IdempotencyKey: "feature-payment-1" },
-        "Mutation preserves idempotency key");
+          ["Input.Body"]="{}", ["Input.IdempotencyKey"]="obsolete-payment" }))
+        Check((await removed.Content.ReadAsStringAsync()).Contains("Choose an available operation."),
+            "Stale payment forms show an unsupported-operation error");
+    Check(calls.Count == before, "Stale payment forms never reach the removed API");
+    var cdar = await File.ReadAllTextAsync(Path.Combine(root, "Docnaut.FranceConnector.FeatureTests/Fixtures/cdar-212.xml"));
+    using (var multipart = new MultipartFormDataContent())
+    {
+        multipart.Add(new StringContent(Token(index)), "__RequestVerificationToken");
+        multipart.Add(new StringContent("createDocumentIntake"), "Input.OperationId");
+        multipart.Add(new StringContent("feature-payment-1"), "Input.IdempotencyKey");
+        var file = new ByteArrayContent(Encoding.UTF8.GetBytes(cdar));
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/xml");
+        multipart.Add(file, "Input.Upload", "cdar-212.xml");
+        using var result = await browser.PostAsync(AppPath("/?handler=Execute"), multipart);
+        Check(result.StatusCode == HttpStatusCode.OK, "CDAR collection upload response is shown");
+    }
+    Check(calls.Last() is { Method: "POST", Path: "documents", FileName: "cdar-212.xml",
+        FileContentType: "application/xml", IdempotencyKey: "feature-payment-1" } collection
+        && collection.Body == cdar, "Original CDAR 212 bytes and idempotency key reach document intake");
+    index = await Page("/");
+    using (var result = await Post("/?handler=Execute", index, new()
+        { ["Input.OperationId"]="listDocumentLifecycleEvents", ["Input.Path[documentTraceId]"]="00000000-0000-4000-8000-000000000001" }))
+        Check(result.StatusCode == HttpStatusCode.OK, "Lifecycle history response is shown");
+    Check(calls.Last() is { Method: "GET", Path: "documents/00000000-0000-4000-8000-000000000001/lifecycle-events", Body: "", IdempotencyKey: "" },
+        "Lifecycle history uses the public document trace ID without mutation headers");
     index = await Page("/");
     using (var result = await Post("/?handler=Execute", index, new()
         { ["Input.OperationId"]="getDocument", ["Input.Path[documentTraceId]"]="00000000-0000-4000-8000-000000000099" }))

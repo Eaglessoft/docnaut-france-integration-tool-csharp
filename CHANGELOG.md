@@ -4,6 +4,11 @@ Changes to the SDK and test tool are recorded here. Package builds alone do not 
 
 ## Unreleased
 
+### Changed
+
+- Collection/payment declarations use original CDAR 212 document uploads; removed the JSON payment operation.
+- Added lifecycle-event reads and aligned the bundled Client API contract, console guidance and HTTP journey.
+
 ### Added
 
 - .NET 10 SDK with 26 named operations, OAuth token caching, validation, bounded uploads and streamed downloads.

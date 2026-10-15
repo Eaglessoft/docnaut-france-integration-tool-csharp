@@ -65,7 +65,7 @@ public sealed class ApiOperation
         new("createArtifactAccess", "Download document file", "Documents", "POST", "documents/{documentTraceId}/artifacts/{artifactId}/access", BodyKind.Download),
         new("decideInboundInvoice", "Record invoice decision", "Decisions", "POST", "documents/{documentId}/decision", BodyKind.Json, key: true),
         new("getInboundInvoiceDecision", "Read invoice decision", "Decisions", "GET", "documents/{documentId}/decision"),
-        new("registerInvoicePayment", "Record invoice payment", "Reports", "POST", "documents/{documentId}/payments", BodyKind.Json, key: true),
+        new("listDocumentLifecycleEvents", "Read lifecycle events", "Documents", "GET", "documents/{documentTraceId}/lifecycle-events"),
         new("submitReportingTransmission", "Submit F10 transmission", "Reports", "POST", "reporting-periods/{period}/transmissions", BodyKind.Multipart, key: true),
         new("getReport", "Read report", "Reports", "GET", "reports/{reportId}"),
         new("getReportReceipts", "Read report receipts", "Reports", "GET", "reports/{reportId}/receipts"),

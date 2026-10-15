@@ -10,21 +10,31 @@ info:
     problem documents carrying the France Connector error catalogue code (`FC-*`); every response repeats the
     request correlation identifier in `X-Correlation-ID`.
 servers:
-  - url: http://localhost:8081
-    description: Dev Container client surface
+  - url: /
+    description: Current client surface
 security:
   - bearerAuth: []
 tags:
   - name: profile
+    description: Caller identity and effective permissions.
   - name: configuration
+    description: Company locale and time-zone preferences.
   - name: service-client
+    description: Caller credential rotation.
   - name: documents
+    description: Document intake, metadata, processing and artifact access.
   - name: decisions
+    description: Buyer actions on assigned inbound invoices.
   - name: reports
+    description: Regulatory reports, receipts and supplied F10 revisions. Payment events arrive as France CDAR/212 document intake.
   - name: peppol
+    description: MLS and inbound availability evidence.
   - name: webhooks
+    description: Subscriptions, verification, signing keys and delivery history.
   - name: provisioning
+    description: One-time credential issuance from an emailed token.
   - name: health
+    description: Anonymous liveness and readiness probes.
 webhooks:
   documentNotification:
     post:
@@ -64,6 +74,7 @@ webhooks:
         - {name: X-Docnaut-Webhook-Delivery-Id, in: header, required: true, schema: {type: string, format: uuid}, description: Delivery ID matching the body.}
         - {name: X-Docnaut-Webhook-Signature, in: header, required: true, schema: {type: string, pattern: '^v1=[0-9a-f]{64}$'}, description: HMAC-SHA256 of the prefix and raw body.}
       requestBody:
+        description: "Signed notification JSON; preserve raw body bytes for signature verification."
         required: true
         content:
           application/json:
@@ -90,6 +101,7 @@ paths:
     get:
       tags: [profile]
       operationId: getClientProfile
+      description: "Resolve the authenticated Keycloak client ID, active company and effective permission catalogue. Use this to confirm which company and capabilities the current token represents."
       x-fc-permission: client.profile.read
       summary: The calling service client, its company and its effective permissions.
       responses:
@@ -110,6 +122,7 @@ paths:
     get:
       tags: [configuration]
       operationId: getClientConfiguration
+      description: "Read the company-wide locale and time-zone preferences. Preserve the quoted ETag response header for If-Match when replacing preferences."
       x-fc-permission: client.configuration.read
       summary: The company's client preferences with their optimistic-locking version as ETag.
       responses:
@@ -128,11 +141,13 @@ paths:
     put:
       tags: [configuration]
       operationId: replaceClientConfiguration
+      description: "Replace both company preferences. Both fields are mandatory. A malformed If-Match receives 400; a stale version receives 409. Success returns the new ETag."
       x-fc-permission: client.configuration.manage
       summary: Replaces the company's client preferences; the If-Match version must match the stored one.
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       requestBody:
+        description: "Complete preference replacement; locale and region time zone are mandatory."
         required: true
         content:
           application/json:
@@ -141,7 +156,7 @@ paths:
         '200':
           description: Replaced preference with its new version.
           headers:
-            ETag: {schema: {type: string}}
+            ETag: {description: "Quoted current version; send unchanged as If-Match on update.", schema: {type: string}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -158,9 +173,11 @@ paths:
     post:
       tags: [service-client]
       operationId: rotateOwnServiceClientSecret
+      description: "Rotate only the service client identified by the current token and audit the supplied reason. Store the returned secret immediately and update token acquisition configuration. It cannot be read or replayed later; losing it requires administrator recovery."
       x-fc-permission: client.service-client.rotate-secret
       summary: Rotates the caller's own Keycloak client secret; the new secret is returned exactly once.
       requestBody:
+        description: "Nonblank auditable reason for current service-client credential rotation."
         required: true
         content:
           application/json:
@@ -169,7 +186,7 @@ paths:
         '200':
           description: "One-time secret; the response is marked `Cache-Control: no-store`."
           headers:
-            Cache-Control: {schema: {type: string, const: no-store}}
+            Cache-Control: {description: "Prevents caching of secrets or document bytes.", schema: {type: string, const: no-store}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -186,14 +203,18 @@ paths:
       tags: [documents]
       operationId: createDocumentIntake
       x-fc-permission: client.document.submit
-      summary: Submits one outbound UBL, CII or Factur-X document (at most 100 MiB) for processing.
+      summary: Submits an invoice or a customer France CDAR210/212 lifecycle document.
       description: |
         The body is spooled, classified and validated before it is stored once under an immutable key and
-        handed to processing. Byte 100 MiB + 1 is rejected with 413. A replay of the same
+        handed to processing. Invoice byte 100 MiB + 1 is rejected with 413. CDAR XML is bounded to10 MiB,
+        validated against its pinned profile and correlated by authenticated tenant, role, invoice references
+        and trusted provenance. CDAR210 is a buyer refusal; CDAR212 is a seller collection. The original
+        document is retained separately from transformed F6/Chorus artifacts. JSON payment creation is removed. A replay of the same
         `Idempotency-Key` with the same content returns the original document with 200.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
+        description: "Multipart source document upload; preserve source bytes for idempotent retries."
         required: true
         content:
           multipart/form-data:
@@ -217,7 +238,7 @@ paths:
         '200':
           description: Same-key replay of an accepted intake.
           headers:
-            Location: {schema: {type: string}}
+            Location: {description: "Relative canonical API read location of the resulting resource.", schema: {type: string}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -233,6 +254,7 @@ paths:
     get:
       tags: [documents]
       operationId: listDocuments
+      description: "Read only company-owned documents, newest first. Omit cursor initially, then pass nextCursor unchanged to this endpoint. An empty items array is successful."
       x-fc-permission: client.document.read
       summary: Lists the company's documents, newest first, by opaque keyset cursor.
       parameters:
@@ -258,6 +280,7 @@ paths:
     get:
       tags: [documents]
       operationId: getDocument
+      description: "Read intake metadata and public documentTraceId. ACCEPTED confirms storage only; use processing for execution and delivery outcomes. Unknown or other-company identifiers return 404."
       x-fc-permission: client.document.read
       summary: One document of the company.
       responses:
@@ -273,6 +296,32 @@ paths:
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '503': {$ref: '#/components/responses/DataUnavailable'}
         '500': {$ref: '#/components/responses/UnexpectedError'}
+  /client/api/v1/documents/{documentTraceId}/lifecycle-events:
+    parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/DocumentTraceId'
+    get:
+      tags: [documents]
+      operationId: listDocumentLifecycleEvents
+      x-fc-permission: client.document.read
+      summary: Reads retained CDAR lifecycle history for an owned invoice or source CDAR document.
+      description: |
+        Returns immutable customer or counterpart 210/213 refusal/rejection and 212 collection events.
+        A 212 event can be a partial payment or signed disbursement; do not infer full payment from one event.
+        Channels retain independent results. UPLOADED/SENT describes transport, not remote business acceptance.
+        Fetch the original CDAR using sourceDocumentTraceId and sourceArtifactId through the document artifact API.
+        Unknown and other-company document identifiers both return 404. An empty items array is successful.
+      responses:
+        '200':
+          description: Retained lifecycle events in occurrence order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CdarLifecyclePage'}
+        '401': {$ref: '#/components/responses/AuthenticationFailed'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/ResourceNotFound'}
+        '503': {$ref: '#/components/responses/DataUnavailable'}
+        '500': {$ref: '#/components/responses/UnexpectedError'}
   /client/api/v1/documents/{documentTraceId}/events:
     parameters:
       - $ref: '#/components/parameters/CorrelationId'
@@ -280,6 +329,7 @@ paths:
     get:
       tags: [documents]
       operationId: listDocumentEvents
+      description: "Read client-visible history for this company-owned document; operator-only events are excluded. eventId identifies the event independently of webhook deliveries. Continue with nextCursor."
       x-fc-permission: client.document.event.read
       summary: Client-visible domain events of one document.
       parameters:
@@ -306,6 +356,7 @@ paths:
     get:
       tags: [documents]
       operationId: listDocumentArtifacts
+      description: "List artifact metadata without stored bytes or storage locators. Use artifactId with the artifact access operation to download source documents, reports or validation evidence."
       x-fc-permission: client.document.artifact.read
       summary: Stored artifacts of one document (source, reports, validation evidence).
       parameters:
@@ -332,6 +383,7 @@ paths:
     get:
       tags: [documents]
       operationId: getDocumentProcessing
+      description: "Read the latest execution, up to 200 attempts ordered by start time, and a transaction-log page. logPage paginates external-call evidence independently of attempts. No processing execution returns 404."
       x-fc-permission: client.document.read
       summary: The latest execution and the document transaction log, including delivery and MLS evidence.
       parameters:
@@ -358,6 +410,7 @@ paths:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/DocumentTraceId'
       - name: artifactId
+        description: "Artifact UUID from the document artifact list; must belong to this company and document."
         in: path
         required: true
         schema: {type: string, format: uuid}
@@ -371,8 +424,8 @@ paths:
         '200':
           description: The artifact bytes as an attachment.
           headers:
-            Content-Disposition: {schema: {type: string}}
-            Cache-Control: {schema: {type: string, const: no-store}}
+            Content-Disposition: {description: "Server-selected attachment filename based on artifact identity and media type.", schema: {type: string}}
+            Cache-Control: {description: "Prevents caching of secrets or document bytes.", schema: {type: string, const: no-store}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/xml: {schema: {type: string, format: binary}}
@@ -391,7 +444,7 @@ paths:
       - name: documentId
         in: path
         required: true
-        description: Connector-owned UUID of the company's assigned inbound invoice.
+        description: Public documentTraceId of the company-owned assigned inbound invoice, returned by document reads.
         schema: {type: string, format: uuid}
     post:
       tags: [decisions]
@@ -409,6 +462,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/IdempotencyKeyUuid'
       requestBody:
+        description: "Buyer decision with conditional refusal or suspension fields."
         required: true
         content:
           application/json:
@@ -432,6 +486,7 @@ paths:
     get:
       tags: [decisions]
       operationId: getInboundInvoiceDecision
+      description: "Read the latest immutable buyer action and ordered history for an owned inbound invoice. Delivery legs reflect current state; a prior POST replay retains its original snapshot. No decision returns 404."
       x-fc-permission: client.document.decision.manage
       summary: Reads the latest decision, ordered history and current applicable delivery states.
       responses:
@@ -453,6 +508,7 @@ paths:
     get:
       tags: [peppol]
       operationId: listPeppolFacts
+      description: "Read MLS acknowledgements, time-outs and assigned inbound availability, newest first. late marks acknowledgements recorded after the expectation deadline. Transport evidence does not prove invoice business acceptance."
       x-fc-permission: client.document.event.read
       summary: Peppol delivery facts of the company (MLS outcomes, time-outs and inbound availability).
       parameters:
@@ -475,6 +531,7 @@ paths:
     parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - name: reportId
+        description: "Company-owned report UUID returned by reporting or decision operations."
         in: path
         required: true
         schema: { type: string, format: uuid }
@@ -494,15 +551,15 @@ paths:
                 items:
                   type: object
                   properties:
-                    id: { type: string, format: uuid }
-                    interfaceCode: { type: string }
-                    correlationStatus: { type: string }
-                    correlationReason: { type: string }
-                    businessStatus: { type: string }
-                    remoteStatusCode: { type: string }
-                    remoteReason: { type: string }
-                    sha256: { type: string }
-                    receivedAt: { type: string, format: date-time }
+                    id: { type: string, format: uuid , description: "Immutable UUID of this evidence record."}
+                    interfaceCode: { type: string , description: "French reporting interface identifying the payload family and syntax."}
+                    correlationStatus: { type: string , description: "Outcome of matching an incoming receipt to an owned report or transmission."}
+                    correlationReason: { type: string , description: "Recorded correlation explanation when available."}
+                    businessStatus: { type: string , description: "Remote business result from the receipt, separate from upload or transport state."}
+                    remoteStatusCode: { type: string , description: "Partner status code captured as immutable receipt evidence when available."}
+                    remoteReason: { type: string , description: "Partner business explanation captured from the receipt when available."}
+                    sha256: { type: string , description: "Lowercase hexadecimal SHA-256 digest of immutable stored bytes."}
+                    receivedAt: { type: string, format: date-time , description: "UTC instant when the partner receipt was received."}
         '401': { $ref: '#/components/responses/AuthenticationFailed' }
         '403': { $ref: '#/components/responses/PermissionDenied' }
         '404': { $ref: '#/components/responses/ResourceNotFound' }
@@ -512,12 +569,14 @@ paths:
     parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - name: reportId
+        description: "Company-owned report UUID returned by reporting or decision operations."
         in: path
         required: true
         schema: {type: string, format: uuid}
     get:
       tags: [reports]
       operationId: getReport
+      description: "Read an owned F1, F6 or F10 report. TRANSMITTED records dispatch, not remote business acceptance; poll receipts for correlated partner results."
       x-fc-permission: client.document.read
       summary: The company's view of one regulatory report (F1, F6 or F10) and its transport state.
       responses:
@@ -532,49 +591,6 @@ paths:
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
         '503': {$ref: '#/components/responses/DataUnavailable'}
-        '500': {$ref: '#/components/responses/UnexpectedError'}
-  /client/api/v1/documents/{documentId}/payments:
-    parameters:
-      - $ref: '#/components/parameters/CorrelationId'
-      - name: documentId
-        in: path
-        required: true
-        description: Public documentTraceId returned by document submission or reads, for an owned supplier invoice with a validated deposit fact.
-        schema: {type: string, format: uuid}
-    post:
-      tags: [reports]
-      operationId: registerInvoicePayment
-      x-fc-permission: client.document.submit
-      summary: Records immutable actual payment facts and produces one F6 212 report.
-      description: |
-        The document and supplier belong to the authenticated company. Occurrence is between the invoice
-        issue date and now. Same key and identical values replay; conflicting keys or payment references fail.
-        Registration is not remote upload or PPF acceptance. Cash amounts include VAT; negative disbursement
-        requires a cancellation reason. Every amount, including zero, requires signed VAT allocation.
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/InvoicePaymentCommand'}
-      responses:
-        '201':
-          description: Payment recorded and lifecycle report generated.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/InvoicePaymentResult'}
-        '200':
-          description: Immutable payment replayed.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/InvoicePaymentResult'}
-        '400': {$ref: '#/components/responses/ValidationFailed'}
-        '401': {$ref: '#/components/responses/AuthenticationFailed'}
-        '403': {$ref: '#/components/responses/PermissionDenied'}
-        '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {$ref: '#/components/responses/IdempotencyConflict'}
-        '503': {$ref: '#/components/responses/StorageUnavailable'}
         '500': {$ref: '#/components/responses/UnexpectedError'}
   /client/api/v1/reporting-periods/{period}/transmissions:
     parameters:
@@ -598,6 +614,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
+        description: "Mandatory multipart F10 XML source (at most 10 MiB) and application/json metadata parts."
         required: true
         content:
           multipart/form-data:
@@ -606,7 +623,7 @@ paths:
               required: [source, metadata]
               properties:
                 source: {type: string, format: binary, description: Prepared F10 XML, at most 10 MiB.}
-                metadata: {$ref: '#/components/schemas/ReportingTransmissionCommand'}
+                metadata: {$ref: '#/components/schemas/ReportingTransmissionCommand', description: F10 category and revision linkage supplied as an application/json multipart part.}
             encoding:
               metadata: {contentType: application/json}
               source: {contentType: application/xml}
@@ -638,6 +655,7 @@ paths:
     get:
       tags: [webhooks]
       operationId: listClientWebhookSubscriptions
+      description: "Page company subscription records in creation order, including their states. Header names are exposed, but signing secrets and custom header values are never returned."
       x-fc-permission: client.webhook.read
       summary: The company's webhook subscriptions.
       parameters:
@@ -659,11 +677,13 @@ paths:
     post:
       tags: [webhooks]
       operationId: createClientWebhookSubscription
+      description: "Create a DRAFT subscription with a public HTTPS endpoint and company-unique name. Save the signing secret, then call verify to activate. The secret is not retained for replay: reusing a completed creation key returns a state conflict even for identical input. Name collisions also return 409."
       x-fc-permission: client.webhook.manage
       summary: Creates a DRAFT subscription; the signing secret is returned exactly once.
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
+        description: "Name, public HTTPS endpoint and event filter; creation does not activate delivery."
         required: true
         content:
           application/json:
@@ -672,8 +692,8 @@ paths:
         '201':
           description: "Subscription and its one-time signing secret (`Cache-Control: no-store`)."
           headers:
-            Location: {schema: {type: string}}
-            Cache-Control: {schema: {type: string, const: no-store}}
+            Location: {description: "Relative canonical API read location of the resulting resource.", schema: {type: string}}
+            Cache-Control: {description: "Prevents caching of secrets or document bytes.", schema: {type: string, const: no-store}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -681,7 +701,9 @@ paths:
         '400': {$ref: '#/components/responses/ValidationFailed'}
         '401': {$ref: '#/components/responses/AuthenticationFailed'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
-        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '409':
+          description: FC-CONFLICT-1002 for a changed idempotency fingerprint; FC-CONFLICT-1003 for an already-consumed one-time-secret response or duplicate company subscription name.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         '503': {$ref: '#/components/responses/DataUnavailable'}
         '500': {$ref: '#/components/responses/UnexpectedError'}
   /client/api/v1/webhook-subscriptions/{subscriptionId}:
@@ -691,13 +713,14 @@ paths:
     get:
       tags: [webhooks]
       operationId: getClientWebhookSubscription
+      description: "Read owned subscription settings and state. Preserve ETag for PATCH. Signing secrets and custom header values are never returned."
       x-fc-permission: client.webhook.read
       summary: One subscription with its version as ETag.
       responses:
         '200':
           description: The subscription.
           headers:
-            ETag: {schema: {type: string}}
+            ETag: {description: "Quoted current version; send unchanged as If-Match on update.", schema: {type: string}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -710,11 +733,13 @@ paths:
     patch:
       tags: [webhooks]
       operationId: updateClientWebhookSubscription
+      description: "Apply supplied non-null fields; omission or null retains existing values. Supplying name, endpoint or eventSelection clears verification and resets DRAFT, even for unchanged values. Verify again before delivery. active=false deactivates; active=true activates only if already verified. A stale If-Match or duplicate company name returns 409."
       x-fc-permission: client.webhook.manage
       summary: Changes name, endpoint, event selection or activation; If-Match carries the version.
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       requestBody:
+        description: "Partial update; omitted or null fields remain unchanged."
         required: true
         content:
           application/json:
@@ -723,7 +748,7 @@ paths:
         '200':
           description: Updated subscription.
           headers:
-            ETag: {schema: {type: string}}
+            ETag: {description: "Quoted current version; send unchanged as If-Match on update.", schema: {type: string}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -732,7 +757,9 @@ paths:
         '401': {$ref: '#/components/responses/AuthenticationFailed'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {$ref: '#/components/responses/ConcurrentModification'}
+        '409':
+          description: FC-CONFLICT-1001 for stale If-Match; FC-CONFLICT-1003 for a duplicate company subscription name.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         '503': {$ref: '#/components/responses/DataUnavailable'}
         '500': {$ref: '#/components/responses/UnexpectedError'}
   /client/api/v1/webhook-subscriptions/{subscriptionId}/verify:
@@ -742,6 +769,7 @@ paths:
     post:
       tags: [webhooks]
       operationId: verifyClientWebhookSubscription
+      description: "Schedule a signed asynchronous challenge. The receiver must return 2xx with only the exact challenge JSON property. Success changes state to ACTIVE; failure returns DRAFT. Poll the subscription for completion. Identical-key replay returns the stored verification response."
       x-fc-permission: client.webhook.manage
       summary: Starts endpoint verification; the challenge is delivered asynchronously.
       parameters:
@@ -758,7 +786,9 @@ paths:
         '401': {$ref: '#/components/responses/AuthenticationFailed'}
         '403': {$ref: '#/components/responses/PermissionDenied'}
         '404': {$ref: '#/components/responses/ResourceNotFound'}
-        '409': {$ref: '#/components/responses/StateConflict'}
+        '409':
+          description: FC-CONFLICT-1002 for a changed idempotency fingerprint; FC-CONFLICT-1003 for conflicting resource state.
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
         '503': {$ref: '#/components/responses/DataUnavailable'}
         '500': {$ref: '#/components/responses/UnexpectedError'}
   /client/api/v1/webhook-subscriptions/{subscriptionId}/rotate-secret:
@@ -768,9 +798,11 @@ paths:
     post:
       tags: [webhooks]
       operationId: rotateClientWebhookSecret
+      description: "Immediately replace the signing key and increment its key version. Save the one-time secret; signatures must be verified with their matching key version. The secret cannot be read or replayed later."
       x-fc-permission: client.webhook.manage
       summary: Issues a new signing secret; the previous one stops signing immediately.
       requestBody:
+        description: "Nonblank auditable reason for immediate signing key rotation."
         required: true
         content:
           application/json:
@@ -779,7 +811,7 @@ paths:
         '200':
           description: "One-time signing secret (`Cache-Control: no-store`)."
           headers:
-            Cache-Control: {schema: {type: string, const: no-store}}
+            Cache-Control: {description: "Prevents caching of secrets or document bytes.", schema: {type: string, const: no-store}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -796,10 +828,12 @@ paths:
     get:
       tags: [webhooks]
       operationId: listClientWebhookDeliveries
+      description: "Page company notification deliveries, optionally filtering by subscriptionId. Each includes its attempt history. Client credentials can inspect deliveries but cannot request operator replay."
       x-fc-permission: client.webhook.delivery.read
       summary: Delivery history, optionally restricted to one subscription.
       parameters:
         - name: subscriptionId
+          description: "Optional company-owned subscription UUID; omit to include all company deliveries."
           in: query
           required: false
           schema: {type: string, format: uuid}
@@ -822,12 +856,14 @@ paths:
     parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - name: deliveryId
+        description: "Company-owned delivery UUID returned by the delivery list."
         in: path
         required: true
         schema: {type: string, format: uuid}
     get:
       tags: [webhooks]
       operationId: getClientWebhookDelivery
+      description: "Read an owned delivery and its attempts, including HTTP result and retry schedule. DELIVERED confirms endpoint acknowledgement, not document processing or business acceptance."
       x-fc-permission: client.webhook.delivery.read
       summary: One delivery with every attempt.
       responses:
@@ -864,7 +900,7 @@ paths:
         '200':
           description: "The generated client secret (`Cache-Control: no-store`, `default-src 'none'` CSP)."
           headers:
-            Cache-Control: {schema: {type: string, const: no-store}}
+            Cache-Control: {description: "Prevents caching of secrets or document bytes.", schema: {type: string, const: no-store}}
             X-Correlation-ID: {$ref: '#/components/headers/CorrelationId'}
           content:
             application/json:
@@ -877,6 +913,7 @@ paths:
     get:
       tags: [health]
       operationId: getLiveness
+      description: "Anonymous infrastructure probe checking whether the application is alive. Returns the Spring Boot health object directly."
       security: []
       summary: Kubernetes liveness probe of the client surface.
       responses:
@@ -886,6 +923,7 @@ paths:
     get:
       tags: [health]
       operationId: getReadiness
+      description: "Anonymous readiness and intake-spool disk-space probe. HTTP 503 means traffic should not be sent to this instance."
       security: []
       summary: Kubernetes readiness probe (readiness state and intake spool disk space).
       responses:
@@ -897,7 +935,19 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Keycloak access token of a company service client (audience `france-connector-client-api`).
+      description: |
+        Send Authorization: Bearer <access-token>. The JWT signature, configured issuer and timestamps must
+        validate. Its payload typ claim must be Bearer; aud must contain france-connector-client-api and
+        must not contain any other audience beginning with france-connector-. Additional non-Connector
+        audiences do not grant access to another Connector surface.
+        tenant_id must be a canonical UUID string identifying an ACTIVE company. azp must name an enabled
+        Keycloak service client belonging to that company, using SC_<tenant_id>_<service-client-UUID>.
+        The current Keycloak client state is checked on authentication; unknown or disabled clients and
+        failed active-client lookups are rejected.
+        scope must be a nonempty, whitespace-separated string containing only recognized client.* permission
+        names. Unknown scopes and non-client permissions invalidate authentication. Each operation additionally
+        requires its x-fc-permission; a valid token lacking that permission receives 403. Invalid token claims,
+        an inactive company or an invalid service-client association receive 401.
   parameters:
     CorrelationId:
       name: X-Correlation-ID
@@ -905,24 +955,28 @@ components:
       required: false
       description: Caller-supplied correlation identifier (at most 128 characters); generated when absent.
       schema: {type: string, maxLength: 128}
+      example: "integration-request-2026-0001"
     IdempotencyKey:
       name: Idempotency-Key
       in: header
       required: true
       description: Tenant-scoped idempotency key; reuse with a different request fingerprint is a conflict.
       schema: {type: string, minLength: 1, maxLength: 255}
+      example: "invoice-upload-2026-0001"
     IdempotencyKeyUuid:
       name: Idempotency-Key
       in: header
       required: true
       description: Tenant-scoped idempotency key in UUID form.
       schema: {type: string, format: uuid}
+      example: "123e4567-e89b-42d3-a456-426614174000"
     IfMatch:
       name: If-Match
       in: header
       required: true
       description: Quoted version returned as ETag by the last read.
       schema: {type: string, pattern: '^"[0-9]+"$'}
+      example: "\"3\""
     Cursor:
       name: cursor
       in: query
@@ -930,6 +984,7 @@ components:
       description: Opaque keyset cursor from `nextCursor`; malformed cursors are rejected with 400.
       schema: {type: string}
     Limit:
+      description: Maximum records per page; defaults to 50, with an accepted range of 1 to 100.
       name: limit
       in: query
       required: false
@@ -941,6 +996,7 @@ components:
       description: Tenant-visible document trace identifier returned by the intake `Location`.
       schema: {type: string, format: uuid}
     SubscriptionId:
+      description: Company-owned subscription UUID returned at creation.
       name: subscriptionId
       in: path
       required: true
@@ -951,293 +1007,309 @@ components:
       schema: {type: string}
   schemas:
     Profile:
+      description: "Authenticated integration identity and effective company permissions."
       type: object
       required: [serviceClientId, tenant, permissions]
       properties:
-        serviceClientId: {type: string}
+        serviceClientId: {type: string, description: "Keycloak client identifier from the token; identifies the calling integration, not a tenant UUID."}
         tenant:
+          description: "Company resolved from the authenticated service client; caller input cannot select another company."
           type: object
           required: [name, status]
           properties:
-            name: {type: string}
-            status: {type: string, enum: [ACTIVE, INACTIVE]}
-        permissions: {type: array, items: {type: string}}
+            name: {type: string, description: "Display name of the authenticated company."}
+            status: {type: string, enum: [ACTIVE, INACTIVE], description: "Company activation state; successful profile reads return ACTIVE."}
+        permissions: {type: array, items: {type: string}, description: "Effective client permission names sorted lexicographically; endpoint permission requirements use these exact values."}
     Preference:
+      description: "Persisted company locale and time-zone preferences."
       type: object
       required: [preferredLocale, preferredTimeZone, version]
       properties:
-        preferredLocale: {type: string, maxLength: 35}
-        preferredTimeZone: {type: string, maxLength: 64}
-        version: {type: integer, format: int64}
+        preferredLocale: {type: string, maxLength: 35, description: "BCP 47 language tag such as fr-FR. Must be canonicalizable without surrounding whitespace; stored in canonical case."}
+        preferredTimeZone: {type: string, maxLength: 64, description: "IANA region time zone such as Europe/Paris. Must resolve through ZoneId, contain a slash and have no surrounding whitespace; UTC alone and offsets are rejected."}
+        version: {type: integer, format: int64, description: "Optimistic-lock resource version. Use its quoted ETag as If-Match for the next update."}
     PreferenceReplace:
+      example: {"preferredLocale": "fr-FR", "preferredTimeZone": "Europe/Paris"}
+      description: "Complete preference replacement; both fields are mandatory."
       type: object
       required: [preferredLocale, preferredTimeZone]
       properties:
-        preferredLocale: {type: string, minLength: 1, maxLength: 35}
-        preferredTimeZone: {type: string, minLength: 1, maxLength: 64}
+        preferredLocale: {type: string, minLength: 1, maxLength: 35, description: "BCP 47 language tag such as fr-FR. Must be canonicalizable without surrounding whitespace; stored in canonical case."}
+        preferredTimeZone: {type: string, minLength: 1, maxLength: 64, description: "IANA region time zone such as Europe/Paris. Must resolve through ZoneId, contain a slash and have no surrounding whitespace; UTC alone and offsets are rejected."}
     ReasonRequest:
+      example: {"reason": "Scheduled integration credential rotation"}
+      description: "Nonblank auditable credential rotation reason."
       type: object
       required: [reason]
       properties:
         reason: {type: string, minLength: 3, maxLength: 500, description: Audited operator reason.}
     OneTimeSecret:
+      description: "Credential issuance response; the secret is exposed only once."
       type: object
       required: [secret, rotatedAt]
       properties:
         secret: {type: string, description: Shown exactly once; never logged.}
-        rotatedAt: {type: string, format: date-time}
+        rotatedAt: {type: string, format: date-time, description: "UTC instant when the replacement credential was issued."}
     DocumentIntakeResult:
+      description: "New intake or immutable same-key replay with accepted metadata."
       type: object
       required: [document, replayed, replayReason]
       properties:
-        document: {$ref: '#/components/schemas/IntakeDocument'}
-        replayed: {type: boolean}
-        replayReason: {type: string, enum: [NONE, IDEMPOTENCY_KEY]}
+        document: {$ref: '#/components/schemas/IntakeDocument', description: "Accepted metadata; use documentTraceId for subsequent document calls."}
+        replayed: {type: boolean, description: "True when returning an existing accepted result for an identical idempotent request; false for a new record."}
+        replayReason: {type: string, enum: [NONE, IDEMPOTENCY_KEY], description: "NONE for new intake; IDEMPOTENCY_KEY when the original intake result is reused."}
     IntakeDocument:
+      description: "Metadata retained at source acceptance; extracted invoice identity may still be absent."
       type: object
       required: [documentTraceId, originalFileName, mediaType, contentLength, sha256, intakeStatus, createdAt]
       properties:
-        documentTraceId: {type: string, format: uuid}
-        documentYear: {type: [integer, 'null']}
-        tenantDocumentNumber: {type: [string, 'null'], maxLength: 100}
-        declaredDocumentCategory: {type: [string, 'null'], enum: [INVOICE, CREDIT_NOTE, null]}
-        originalFileName: {type: string, maxLength: 255}
-        mediaType: {type: string, enum: [application/xml, text/xml, application/pdf]}
-        contentLength: {type: integer, format: int64, minimum: 1, maximum: 104857600}
-        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+        documentTraceId: {type: string, format: uuid, description: "Public document UUID returned by intake or document reads; use it in document routes."}
+        documentYear: {type: [integer, 'null'], description: "Year extracted from the invoice issue date; null until identity extraction succeeds."}
+        tenantDocumentNumber: {type: [string, 'null'], maxLength: 100, description: "Invoice or credit-note identifier extracted from the source; null until identity extraction succeeds."}
+        declaredDocumentCategory: {type: [string, 'null'], enum: [INVOICE, CREDIT_NOTE, null], description: "Extracted INVOICE or CREDIT_NOTE category; null until identity extraction supplies it."}
+        originalFileName: {type: string, maxLength: 255, description: "Original submitted filename retained as metadata; not a download URL."}
+        mediaType: {type: string, enum: [application/xml, text/xml, application/pdf], description: "Stored content MIME type for interpreting the source or artifact bytes."}
+        contentLength: {type: integer, format: int64, minimum: 1, maximum: 104857600, description: "Exact size of stored source or artifact bytes."}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$', description: "Lowercase hexadecimal SHA-256 digest of immutable stored bytes."}
         intakeStatus: {type: string, const: ACCEPTED, description: Stored for processing; not delivery or business acceptance.}
-        createdAt: {type: string, format: date-time}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
     Document:
+      description: "Tenant-visible intake metadata; processing and transport outcomes are separate resources."
       type: object
       required: [documentTraceId, originalFileName, mediaType, contentLength, sha256, intakeStatus, createdAt]
       properties:
-        documentTraceId: {type: string, format: uuid}
-        documentYear: {type: [integer, 'null']}
-        tenantDocumentNumber: {type: [string, 'null']}
-        declaredDocumentCategory: {type: [string, 'null']}
-        originalFileName: {type: string}
-        mediaType: {type: string}
-        contentLength: {type: integer, format: int64}
-        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
-        intakeStatus: {type: string}
-        createdAt: {type: string, format: date-time}
+        documentTraceId: {type: string, format: uuid, description: "Public document UUID returned by intake or document reads; use it in document routes."}
+        documentYear: {type: [integer, 'null'], description: "Year extracted from the invoice issue date; null until identity extraction succeeds."}
+        tenantDocumentNumber: {type: [string, 'null'], description: "Invoice or credit-note identifier extracted from the source; null until identity extraction succeeds."}
+        declaredDocumentCategory: {type: [string, 'null'], description: "Extracted INVOICE or CREDIT_NOTE category; null until identity extraction supplies it."}
+        originalFileName: {type: string, description: "Original submitted filename retained as metadata; not a download URL."}
+        mediaType: {type: string, description: "Stored content MIME type for interpreting the source or artifact bytes."}
+        contentLength: {type: integer, format: int64, description: "Exact size of stored source or artifact bytes."}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$', description: "Lowercase hexadecimal SHA-256 digest of immutable stored bytes."}
+        intakeStatus: {type: string, description: "ACCEPTED means stored for processing, not validation, delivery or business acceptance."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
     DocumentPage:
+      description: "Cursor-paginated document records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/Document'}}
-        nextCursor: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/Document'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     Event:
+      description: "Immutable client-visible document domain event."
       type: object
       required: [eventId, documentTraceId, type, occurredAt]
       properties:
-        eventId: {type: string, format: uuid}
-        documentTraceId: {type: string, format: uuid}
+        eventId: {type: string, format: uuid, description: "Immutable source event UUID; deduplicate notifications using this identity."}
+        documentTraceId: {type: string, format: uuid, description: "Public document UUID returned by intake or document reads; use it in document routes."}
         type: {type: string, description: Client-visible domain event type.}
-        occurredAt: {type: string, format: date-time}
+        occurredAt: {type: string, format: date-time, description: "UTC instant when the event or external interaction occurred."}
     EventPage:
+      description: "Cursor-paginated event records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/Event'}}
-        nextCursor: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/Event'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     Artifact:
+      description: "Immutable document payload metadata; download through the artifact access operation."
       type: object
       required: [artifactId, type, mediaType, contentLength, sha256, createdAt]
       properties:
-        artifactId: {type: string, format: uuid}
+        artifactId: {type: string, format: uuid, description: "Owned artifact UUID to supply with documentTraceId to the artifact access operation."}
         type: {type: string, description: "Object role, for example DOCUMENT_SOURCE or F1_REPORT."}
-        mediaType: {type: string}
-        contentLength: {type: integer, format: int64}
-        sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
-        createdAt: {type: string, format: date-time}
+        mediaType: {type: string, description: "Stored content MIME type for interpreting the source or artifact bytes."}
+        contentLength: {type: integer, format: int64, description: "Exact size of stored source or artifact bytes."}
+        sha256: {type: string, pattern: '^[0-9a-f]{64}$', description: "Lowercase hexadecimal SHA-256 digest of immutable stored bytes."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
     ArtifactPage:
+      description: "Cursor-paginated artifact records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/Artifact'}}
-        nextCursor: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/Artifact'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     Processing:
+      description: "Latest run with stage attempts and separately paged safe external-call evidence."
       type: object
       required: [executionId, executionNumber, status, currentStage, createdAt, updatedAt, attempts, transactionLog]
       properties:
-        executionId: {type: string, format: uuid}
-        executionNumber: {type: integer, format: int64}
-        status: {$ref: '#/components/schemas/ProcessingStatus'}
-        currentStage: {$ref: '#/components/schemas/ProcessingStage'}
-        safeErrorCode: {type: [string, 'null']}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
-        attempts: {type: array, items: {$ref: '#/components/schemas/ProcessingAttempt'}}
-        transactionLog: {$ref: '#/components/schemas/TransactionLog'}
+        executionId: {type: string, format: uuid, description: "UUID of one processing run, distinct from public documentTraceId."}
+        executionNumber: {type: integer, format: int64, description: "Monotonic processing run number for the document; this view returns the latest run."}
+        status: {$ref: '#/components/schemas/ProcessingStatus', description: "Execution and delivery state; submission and delivery are separate milestones. See ProcessingStatus."}
+        currentStage: {$ref: '#/components/schemas/ProcessingStage', description: "Current processing boundary; interpret together with execution status and attempt outcomes."}
+        safeErrorCode: {type: [string, 'null'], description: "Safe catalogue or integration error code when recorded; null if none. Contains no raw credential or payload."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
+        updatedAt: {type: string, format: date-time, description: "UTC instant of the latest persisted resource-state update."}
+        attempts: {type: array, items: {$ref: '#/components/schemas/ProcessingAttempt'}, description: "Recorded attempts and outcomes; an individual failure need not be the terminal resource result."}
+        transactionLog: {$ref: '#/components/schemas/TransactionLog', description: "Paged safe external-call evidence with execution and decision references when available."}
     ProcessingStatus:
+      description: "HELD awaits release; PENDING awaits execution; RUNNING is active; SUCCEEDED or FAILED ends processing; INDETERMINATE lacks a definite result; ROUTE_UNAVAILABLE lacks a route; SUBMISSION_UNKNOWN is ambiguous submission; SUBMITTED confirms submission; DELIVERED, DELIVERY_REJECTED and DELIVERY_UNKNOWN describe delivery evidence."
       type: string
       enum: [HELD, PENDING, RUNNING, SUCCEEDED, FAILED, INDETERMINATE, ROUTE_UNAVAILABLE, SUBMISSION_UNKNOWN, SUBMITTED,
              DELIVERED, DELIVERY_REJECTED, DELIVERY_UNKNOWN]
     ProcessingStage:
+      description: "Ordered boundaries: DETECT syntax/profile, VALIDATE content, EXTRACT identity, PREPARE_REPORTS regulatory artifacts, RESOLVE_RECIPIENT destination, RESOLVE_TRANSPORT transport and SUBMIT delivery."
       type: string
       enum: [DETECT, VALIDATE, EXTRACT, PREPARE_REPORTS, RESOLVE_RECIPIENT, RESOLVE_TRANSPORT, SUBMIT]
     ProcessingAttempt:
+      description: "One stage execution with its recorded outcome and retry eligibility."
       type: object
       required: [stage, attemptNumber, outcome, retryable, startedAt, completedAt]
       properties:
-        stage: {$ref: '#/components/schemas/ProcessingStage'}
-        attemptNumber: {type: integer, minimum: 1}
+        stage: {$ref: '#/components/schemas/ProcessingStage', description: "Processing boundary executed by this attempt."}
+        reportProvenance: {$ref: '#/components/schemas/ReportProvenance', description: "Exact retained F1 source, input, stylesheet version and output identities; null for other stages."}
+        attemptNumber: {type: integer, minimum: 1, description: "One-based attempt sequence within the stage or delivery."}
         outcome:
+          description: "Stage result: INVALID is validation failure; INDETERMINATE lacks a definite result; ROUTE_UNAVAILABLE lacks a destination; SUBMISSION_* values describe the submission boundary, not buyer acceptance."
           type: string
           enum: [SUCCEEDED, INVALID, INDETERMINATE, ROUTE_UNAVAILABLE, SUBMISSION_HELD, SUBMISSION_ACCEPTED, SUBMISSION_REJECTED,
                  SUBMISSION_UNKNOWN, SUBMISSION_BLOCKED]
-        retryable: {type: boolean}
-        safeErrorCode: {type: [string, 'null']}
-        startedAt: {type: string, format: date-time}
-        completedAt: {type: string, format: date-time}
+        retryable: {type: boolean, description: "Whether this outcome is eligible for retry; does not confirm that a retry completed."}
+        safeErrorCode: {type: [string, 'null'], description: "Safe catalogue or integration error code when recorded; null if none. Contains no raw credential or payload."}
+        startedAt: {type: string, format: date-time, description: "UTC instant when this attempt began."}
+        completedAt: {type: string, format: date-time, description: "UTC instant when completion was recorded; a nullable field is null while unfinished."}
+    ReportProvenance:
+      type: [object, 'null']
+      description: Immutable artifact and stylesheet identities retained for an F1 transformation; no storage locations or credentials.
+      properties:
+        sourceArtifactId: {type: string, format: uuid, description: "Retained sourceArtifactId used in this transformation."}
+        inputArtifactId: {type: string, format: uuid, description: "Retained inputArtifactId used in this transformation."}
+        outputArtifactId: {type: string, format: uuid, description: "Retained outputArtifactId used in this transformation."}
+        xsltDefinitionId: {type: string, format: uuid, description: "Retained xsltDefinitionId used in this transformation."}
+        xsltVersionId: {type: string, format: uuid, description: "Retained xsltVersionId used in this transformation."}
+        xsltArtifactId: {type: string, format: uuid, description: "Retained xsltArtifactId used in this transformation."}
+        sourceSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: "Verified SHA-256 of the retained source bytes."}
+        inputSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: "Verified SHA-256 of the retained input bytes."}
+        outputSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: "Verified SHA-256 of the retained output bytes."}
+        xsltSha256: {type: string, pattern: '^[a-f0-9]{64}$', description: "Verified SHA-256 of the retained xslt bytes."}
     TransactionLog:
+      description: "One page of safe document integration evidence."
       type: object
       required: [entries, page, hasNext]
       properties:
-        entries: {type: array, items: {$ref: '#/components/schemas/ExternalCall'}}
-        page: {type: integer, minimum: 0}
-        hasNext: {type: boolean}
+        entries: {type: array, items: {$ref: '#/components/schemas/ExternalCall'}, description: "Safe external-call records in this log page, newest first."}
+        page: {type: integer, minimum: 0, description: "Zero-based logPage index; a page contains at most 50 records."}
+        hasNext: {type: boolean, description: "True when another log page exists; increment logPage to retrieve it."}
     ExternalCall:
+      description: "Safe integration interaction evidence excluding raw payloads and credentials."
       type: object
       required: [id, system, operation, outcome, request, details, occurredAt]
       properties:
         system: {type: string, description: "External system name, for example PHOSS, PHORM or PPF."}
-        operation: {type: string}
-        outcome: {type: string, enum: [SUCCEEDED, FAILED, TIMEOUT, REJECTED, INDETERMINATE, BYPASSED]}
-        id: {type: string, format: uuid}
-        executionId: {type: [string, 'null'], format: uuid}
-        decisionId: {type: [string, 'null'], format: uuid}
+        operation: {type: string, description: "Recorded external operation name identifying the attempted integration call."}
+        outcome: {type: string, enum: [SUCCEEDED, FAILED, TIMEOUT, REJECTED, INDETERMINATE, BYPASSED], description: "SUCCEEDED confirms the interaction; FAILED, TIMEOUT or REJECTED records an unsuccessful call; INDETERMINATE lacks a definite result; BYPASSED means intentionally not invoked."}
+        id: {type: string, format: uuid, description: "Immutable UUID of this evidence record."}
+        executionId: {type: [string, 'null'], format: uuid, description: "UUID of one processing run, distinct from public documentTraceId."}
+        decisionId: {type: [string, 'null'], format: uuid, description: "Immutable buyer action UUID, distinct from the invoice identifier."}
         request: {type: object, description: Safe request identifiers; no credentials or XML payload.}
         details:
           type: object
           description: Delivery or MLS evidence including HTTP status, remote state, error details, verification result/details, response descriptions, notes, line errors and artifact reference when available. An attempt failure is not a terminal document rejection.
-        safeErrorCode: {type: [string, 'null']}
-        correlationId: {type: [string, 'null']}
-        occurredAt: {type: string, format: date-time}
+        safeErrorCode: {type: [string, 'null'], description: "Safe catalogue or integration error code when recorded; null if none. Contains no raw credential or payload."}
+        correlationId: {type: [string, 'null'], description: "Request or action identifier connecting API, audit and integration evidence."}
+        occurredAt: {type: string, format: date-time, description: "UTC instant when the event or external interaction occurred."}
     InvoiceDecisionRequest:
+      example: {"decision": "ACCEPTED"}
+      description: "Buyer action on an assigned inbound invoice. ACCEPTED requires reasonCode, comment and expectedAction absent or null. REFUSED and SUSPENDED require reasonCode and comment. SUSPENDED is Chorus-only; Chorus prohibits expectedAction."
       type: object
       additionalProperties: false
       required: [decision]
       properties:
-        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED]}
+        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED], description: "ACCEPTED accepts the invoice; REFUSED rejects it with reason and comment; SUSPENDED temporarily pauses a Chorus invoice only."}
         reasonCode:
           type: [string, 'null']
           minLength: 1
           maxLength: 64
-          description: Required for REFUSED and SUSPENDED. Chorus requires the status-specific AFNOR reason code; SUSPENDED is Chorus-only.
+          pattern: '^[A-Z0-9][A-Z0-9._-]{0,63}$'
+          description: Required for REFUSED and SUSPENDED; absent or null for ACCEPTED. Chorus requires the status-specific AFNOR reason code; SUSPENDED is Chorus-only.
         comment:
           type: [string, 'null']
           minLength: 1
           maxLength: 500
-          description: Required for REFUSED and SUSPENDED; leading/trailing whitespace and control characters are rejected.
-        expectedAction: {$ref: '#/components/schemas/ExpectedAction'}
+          description: Required for REFUSED and SUSPENDED; absent or null for ACCEPTED. Leading/trailing whitespace and control characters are rejected.
+        expectedAction: {$ref: '#/components/schemas/ExpectedAction', description: "Optional Peppol OPStatusAction supplier follow-up; absent or null when unused, and prohibited for ACCEPTED or any Chorus decision."}
     ExpectedAction:
       type: [string, 'null']
       enum: [NOA, PIN, NIN, CNF, CNP, CNA, OTH, null]
-      description: Optional Peppol OPStatusAction code for REFUSED.
+      description: Optional case-sensitive Peppol OPStatusAction code for REFUSED; prohibited for ACCEPTED and all Chorus-origin decisions.
     PpfActionLeg:
+      description: "PPF F6 reporting outcome associated with a buyer decision."
       type: object
       required: [status, correlationId]
       properties:
-        status: {type: string, enum: [NOT_APPLICABLE, PREPARING, VALIDATED, TRANSMITTED, BYPASSED, VALIDATION_FAILED, FAILED]}
-        errorCode: {type: [string, 'null'], maxLength: 64}
+        status: {type: string, enum: [NOT_APPLICABLE, PREPARING, VALIDATED, TRANSMITTED, BYPASSED, VALIDATION_FAILED, FAILED], description: "NOT_APPLICABLE requires no report; PREPARING awaits generation; VALIDATED is ready; TRANSMITTED records dispatch; BYPASSED records skipped integration; VALIDATION_FAILED or FAILED records failure."}
+        errorCode: {type: [string, 'null'], maxLength: 64, description: "Safe recorded failure code for this leg; null if no error is recorded."}
         reportId:
           type: [string, 'null']
           format: uuid
           description: The F6 210 report this leg mirrors; readable through `getReport`.
-        correlationId: {type: string, minLength: 1, maxLength: 128}
+        correlationId: {type: string, minLength: 1, maxLength: 128, description: "Request or action identifier connecting API, audit and integration evidence."}
     PeppolActionLeg:
+      description: "Peppol Invoice Response preparation and submission outcome."
       type: object
       required: [status, correlationId]
       properties:
-        status: {type: string, enum: [NOT_APPLICABLE, PREPARING, SUBMITTED, REJECTED, UNKNOWN, ROUTE_UNAVAILABLE, FAILED]}
-        errorCode: {type: [string, 'null'], maxLength: 64}
+        status: {type: string, enum: [NOT_APPLICABLE, PREPARING, SUBMITTED, REJECTED, UNKNOWN, ROUTE_UNAVAILABLE, FAILED], description: "NOT_APPLICABLE requires no response; PREPARING is pending; SUBMITTED confirms submission; REJECTED records rejection; UNKNOWN is ambiguous; ROUTE_UNAVAILABLE lacks a route; FAILED records failure."}
+        errorCode: {type: [string, 'null'], maxLength: 64, description: "Safe recorded failure code for this leg; null if no error is recorded."}
         reportId: {type: [string, 'null'], format: uuid, description: Always null for the Peppol leg.}
-        correlationId: {type: string, minLength: 1, maxLength: 128}
+        correlationId: {type: string, minLength: 1, maxLength: 128, description: "Request or action identifier connecting API, audit and integration evidence."}
     InvoiceDecisionAction:
+      description: "Latest action with applicable delivery legs and immutable ordered history."
       type: object
       required: [decisionId, documentId, decision, ppf, peppol, chorus, actorServiceClientId, createdAt, sequence, history]
       properties:
-        sequence: {type: integer, minimum: 1}
+        sequence: {type: integer, minimum: 1, description: "One-based immutable action order within this invoice history."}
         history:
           type: array
           description: Ordered immutable action history with current Chorus delivery states; POST replay retains its original snapshot.
           items: {$ref: '#/components/schemas/InvoiceDecisionHistoryEntry'}
-        decisionId: {type: string, format: uuid}
-        documentId: {type: string, format: uuid}
-        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED]}
-        reasonCode: {type: [string, 'null']}
-        comment: {type: [string, 'null']}
-        expectedAction: {$ref: '#/components/schemas/ExpectedAction'}
-        ppf: {$ref: '#/components/schemas/PpfActionLeg'}
-        peppol: {$ref: '#/components/schemas/PeppolActionLeg'}
-        chorus: {$ref: '#/components/schemas/ChorusActionLeg'}
-        actorServiceClientId: {type: string, format: uuid}
-        createdAt: {type: string, format: date-time}
+        decisionId: {type: string, format: uuid, description: "Immutable buyer action UUID, distinct from the invoice identifier."}
+        documentId: {type: string, format: uuid, description: "Public documentTraceId of the inbound invoice; use this UUID in document API routes."}
+        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED], description: "ACCEPTED accepts the invoice; REFUSED rejects it with reason and comment; SUSPENDED temporarily pauses a Chorus invoice only."}
+        reasonCode: {type: [string, 'null'], description: "Recorded refusal or suspension reason; null for an accepted action."}
+        comment: {type: [string, 'null'], description: "Buyer explanation preserved with the action; null for an accepted action."}
+        expectedAction: {$ref: '#/components/schemas/ExpectedAction', description: "Optional Peppol OPStatusAction supplier follow-up; absent or null when unused, and prohibited for ACCEPTED or any Chorus decision."}
+        ppf: {$ref: '#/components/schemas/PpfActionLeg', description: "F6 refusal reporting leg; reportId is readable through the report API. NOT_APPLICABLE means no report is required."}
+        peppol: {$ref: '#/components/schemas/PeppolActionLeg', description: "Peppol Invoice Response submission outcome, separate from PPF reporting and invoice business acceptance."}
+        chorus: {$ref: '#/components/schemas/ChorusActionLeg', description: "Chorus buyer lifecycle delivery leg, applicable only to Chorus-origin invoices."}
+        actorServiceClientId: {type: string, format: uuid, description: "Connector UUID of the authenticated service client that recorded this buyer action."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
     InvoiceDecisionHistoryEntry:
+      description: "Immutable buyer action and its current Chorus delivery state."
       type: object
       required: [decisionId, sequence, decision, chorus, actorServiceClientId, createdAt]
       properties:
-        decisionId: {type: string, format: uuid}
+        decisionId: {type: string, format: uuid, description: "Immutable buyer action UUID, distinct from the invoice identifier."}
         sequence: {type: integer, minimum: 1, description: Immutable per-document action order.}
-        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED]}
-        reasonCode: {type: [string, 'null']}
-        comment: {type: [string, 'null']}
-        expectedAction: {$ref: '#/components/schemas/ExpectedAction'}
-        chorus: {$ref: '#/components/schemas/ChorusActionLeg'}
-        actorServiceClientId: {type: string, format: uuid}
-        createdAt: {type: string, format: date-time}
+        decision: {type: string, enum: [ACCEPTED, REFUSED, SUSPENDED], description: "ACCEPTED accepts the invoice; REFUSED rejects it with reason and comment; SUSPENDED temporarily pauses a Chorus invoice only."}
+        reasonCode: {type: [string, 'null'], description: "Recorded refusal or suspension reason; null for an accepted action."}
+        comment: {type: [string, 'null'], description: "Buyer explanation preserved with the action; null for an accepted action."}
+        expectedAction: {$ref: '#/components/schemas/ExpectedAction', description: "Optional Peppol OPStatusAction supplier follow-up; absent or null when unused, and prohibited for ACCEPTED or any Chorus decision."}
+        chorus: {$ref: '#/components/schemas/ChorusActionLeg', description: "Chorus buyer lifecycle delivery leg, applicable only to Chorus-origin invoices."}
+        actorServiceClientId: {type: string, format: uuid, description: "Connector UUID of the authenticated service client that recorded this buyer action."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
     PeppolFact:
+      description: "Company-scoped MLS evidence or assigned inbound availability."
       type: object
       required: [id, type, observedAt, late]
       properties:
-        id: {type: string, format: uuid}
-        type: {type: string, enum: [MLS_AP, MLS_AB, MLS_RE, MLS_TIMEOUT, INBOUND_AVAILABLE]}
-        expectationId: {type: [string, 'null'], format: uuid}
-        documentId: {type: [string, 'null'], format: uuid}
-        observedAt: {type: string, format: date-time}
-        late: {type: boolean}
+        id: {type: string, format: uuid, description: "Immutable UUID of this evidence record."}
+        type: {type: string, enum: [MLS_AP, MLS_AB, MLS_RE, MLS_TIMEOUT, INBOUND_AVAILABLE], description: "MLS_AP, MLS_AB and MLS_RE preserve MLS outcome codes; MLS_TIMEOUT records an expired expectation; INBOUND_AVAILABLE records an assigned inbound document."}
+        expectationId: {type: [string, 'null'], format: uuid, description: "MLS expectation UUID for outbound acknowledgements/time-outs; null for inbound availability."}
+        documentId: {type: [string, 'null'], format: uuid, description: "Assigned internal document UUID for inbound availability; null for MLS facts. Document API reads expose the public documentTraceId."}
+        observedAt: {type: string, format: date-time, description: "UTC instant when the Connector recorded this Peppol fact."}
+        late: {type: boolean, description: "True when an MLS acknowledgement arrived after its expectation deadline."}
     PeppolFactPage:
+      description: "Cursor-paginated peppolfact records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/PeppolFact'}}
-        nextCursor: {type: [string, 'null']}
-    InvoicePaymentCommand:
-      type: object
-      required: [paymentReference, occurredAt, payment]
-      properties:
-        paymentReference: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$', description: Immutable payment identity within the invoice.}
-        occurredAt: {type: string, format: date-time, description: Actual payment occurrence; no earlier than invoice issue or later than now.}
-        payment:
-          type: object
-          required: [amount, currency, vatBreakdown]
-          properties:
-            amount: {type: number, description: Signed cash collected including VAT; up to 13 integer and 6 fractional digits.}
-            currency: {type: string, pattern: '^[A-Z]{3}$', description: Payment currency.}
-            vatBreakdown:
-              type: array
-              minItems: 1
-              maxItems: 100
-              description: Unique VAT rates; signed allocations sum exactly to amount.
-              items:
-                type: object
-                required: [rate, amount]
-                properties:
-                  rate: {type: number, minimum: 0, maximum: 100, multipleOf: 0.01, description: VAT percentage.}
-                  amount: {type: number, description: Cash collected at this VAT rate; same sign as payment.}
-            cancellationReason: {type: [string, 'null'], maxLength: 2000, description: Required cancellation explanation for negative disbursement.}
-            remainingAmount: {type: 'null', description: Omit or use null. Non-null values receive HTTP 400 because this contract has no VAT allocation for remaining amounts.}
-            discountAmount: {type: 'null', description: Omit or use null. Non-null values receive HTTP 400 because this contract has no VAT allocation for discounts.}
-    InvoicePaymentResult:
-      type: object
-      required: [paymentId, reportId, replayed]
-      properties:
-        paymentId: {type: string, format: uuid, description: Immutable payment fact.}
-        reportId: {type: string, format: uuid, description: Generated F6 212 report.}
-        replayed: {type: boolean, description: True when returning the existing fact/report.}
+        items: {type: array, items: {$ref: '#/components/schemas/PeppolFact'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     ReportingTransmissionCommand:
+      example: {"category": "SALES", "kind": "INITIAL"}
+      description: "F10 category and correction linkage supplied as multipart metadata JSON."
       type: object
       required: [category, kind]
       properties:
@@ -1245,6 +1317,7 @@ components:
         kind: {type: string, enum: [INITIAL, CORRECTION], description: Initial declaration or linked corrective revision.}
         previousReportId: {type: [string, 'null'], format: uuid, description: Required latest same-category report for correction; absent for initial.}
     ReportingTransmissionResult:
+      description: "Immutable F10 revision; submission does not release dispatch."
       type: object
       required: [report, category, kind, revision, replayed]
       properties:
@@ -1252,9 +1325,10 @@ components:
         kind: {type: string, enum: [INITIAL, CORRECTION], description: Validated transmission kind.}
         revision: {type: integer, minimum: 1, description: Server-assigned monotonic category revision.}
         previousReportId: {type: [string, 'null'], format: uuid, description: Preserved prior report linkage for a correction.}
-        report: {$ref: '#/components/schemas/Report'}
+        report: {$ref: '#/components/schemas/Report', description: "Generated regulatory report with persisted status and transport references."}
         replayed: {type: boolean, description: True for a same-key immutable replay.}
     ChorusActionLeg:
+      description: "Chorus lifecycle dispatch state and negative receipt evidence."
       type: object
       required: [status, correlationId]
       properties:
@@ -1262,63 +1336,140 @@ components:
         errorCode: {type: [string, 'null'], maxLength: 64, description: Latest negative Chorus receipt code (501 or 601) when present; transport status remains unchanged.}
         reportId: {type: [string, 'null'], format: uuid, description: Chorus EDI transmission ID for this leg.}
         correlationId: {type: string, description: Decision action correlation identifier.}
+    CdarLifecyclePage:
+      description: Retained lifecycle history for one owned document.
+      type: object
+      required: [items]
+      properties:
+        items:
+          description: Events in occurrence order; separate partial collections remain separate entries.
+          type: array
+          items: {$ref: '#/components/schemas/CdarLifecycleEvent'}
+    CdarLifecycleEvent:
+      description: One immutable CDAR event and its independent dispatch outcomes.
+      type: object
+      required: [eventId, invoiceDocumentTraceId, sourceDocumentTraceId, sourceArtifactId, direction, statusCode, occurredAt, channels]
+      properties:
+        eventId: {type: string, format: uuid, description: Retained connector lifecycle event identity.}
+        invoiceDocumentTraceId: {type: string, format: uuid, description: Owned source invoice public trace identifier.}
+        sourceDocumentTraceId: {type: string, format: uuid, description: Retained original CDAR public trace identifier.}
+        sourceArtifactId: {type: string, format: uuid, description: Original CDAR artifact identifier for document download.}
+        direction: {type: string, enum: [CUSTOMER, COUNTERPART], description: CUSTOMER is submitted by the authenticated company; COUNTERPART is corroborated inbound transport.}
+        statusCode: {type: string, enum: ['210', '212', '213'], description: Refused, collected or rejected status respectively; not a technical delivery outcome.}
+        occurredAt: {type: string, format: date-time, description: Declared status occurrence resolved using explicitly configured source timezone.}
+        reasonCode: {type: [string, 'null'], description: Required refusal or rejection reason; null for a collection event.}
+        note: {type: [string, 'null'], description: Retained lifecycle comment; a disbursement requires cancellation justification.}
+        payment:
+          description: Collection facts for status212; null for rejection/refusal.
+          oneOf:
+            - $ref: '#/components/schemas/CdarPayment'
+            - type: 'null'
+        channels:
+          description: Independent outbound legs; empty for counterpart observations or local-only processing.
+          type: array
+          items: {$ref: '#/components/schemas/CdarChannel'}
+    CdarPayment:
+      description: Signed declared collection event, including VAT allocation; not a full-payment assertion.
+      type: object
+      required: [date, amount, currency, allocations]
+      properties:
+        date: {type: string, format: date, description: Declared212 status occurrence local date from MDT78; not inferred bank settlement date.}
+        amount: {type: number, description: Signed amount; positive collection or negative disbursement under the pinned profile.}
+        currency: {type: string, pattern: '^[A-Z]{3}$', description: ISO4217 currency of the collection and allocations.}
+        cancellationReason: {type: [string, 'null'], description: Mandatory comment justification for a negative disbursement.}
+        allocations:
+          description: VAT rate allocations whose signed amounts sum exactly to the event amount.
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/CdarVatAllocation'}
+    CdarVatAllocation:
+      description: Collection amount attributed to one VAT rate.
+      type: object
+      required: [rate, amount]
+      properties:
+        rate: {type: number, minimum: 0, maximum: 100, description: Applicable VAT percentage.}
+        amount: {type: number, description: Signed amount allocated to this VAT rate in payment currency.}
+    CdarChannel:
+      description: One persistent dispatch leg; completion never causes a sibling leg to be resent.
+      type: object
+      required: [channel, status]
+      properties:
+        channel: {type: string, enum: [PEPPOL, PPF, CHORUS], description: Destination transport for this prepared artifact.}
+        status: {type: string, description: Persistent leg state including waiting, retry, uncertain and completed outcomes.}
+        errorCode: {type: [string, 'null'], description: Safe operational error or hold reason; no provider secret or stack trace.}
+        externalId: {type: [string, 'null'], format: uuid, description: Linked transport or regulatory report UUID when allocated.}
+        dueAt: {type: [string, 'null'], format: date-time, description: PPF mandatory reporting deadline24h after declared status occurrence; null for other channels.}
+        overdue: {type: boolean, description: True when a PPF child remains incomplete after its reporting deadline.}
     Report:
+      description: "Persisted regulatory report identity, period and transport metadata."
       type: object
       required: [reportId, interfaceCode, kind, status, createdAt]
       properties:
-        reportId: {type: string, format: uuid}
-        interfaceCode: {type: string, enum: [FFE0111A, FFE0112A, FFE0614A, FFE1025A]}
-        kind: {type: string, enum: [F1_UBL, F1_CII, F6_INVOICE_LIFECYCLE, F10_REPORTING]}
-        status: {type: string, enum: [VALIDATED, TRANSMITTED, BYPASSED, VALIDATION_FAILED]}
-        periodStart: {type: [string, 'null'], format: date}
-        periodEnd: {type: [string, 'null'], format: date}
-        transmittedAt: {type: [string, 'null'], format: date-time}
-        transportReference: {type: [string, 'null']}
-        createdAt: {type: string, format: date-time}
+        reportId: {type: string, format: uuid, description: "Connector report UUID for report and correlated-receipt reads."}
+        interfaceCode: {type: string, enum: [FFE0111A, FFE0112A, FFE0614A, FFE1025A], description: "French reporting interface identifying the payload family and syntax."}
+        kind: {type: string, enum: [F1_UBL, F1_CII, F6_INVOICE_LIFECYCLE, F10_REPORTING], description: "F1_UBL or F1_CII identifies invoice syntax; F6_INVOICE_LIFECYCLE identifies lifecycle reporting; F10_REPORTING identifies e-reporting."}
+        status: {type: string, enum: [VALIDATED, TRANSMITTED, BYPASSED, VALIDATION_FAILED], description: "VALIDATED is generated and valid; TRANSMITTED records dispatch; BYPASSED records skipped integration; VALIDATION_FAILED records invalid output. None alone proves remote business acceptance."}
+        periodStart: {type: [string, 'null'], format: date, description: "Reporting period start date; null for reports without a reporting period."}
+        periodEnd: {type: [string, 'null'], format: date, description: "Reporting period end date; null for reports without a reporting period."}
+        transmittedAt: {type: [string, 'null'], format: date-time, description: "UTC transmission instant; null before transmission or when bypassed."}
+        transportReference: {type: [string, 'null'], description: "Remote or transport dispatch reference; null until one is recorded."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
+        deliveryState: {type: string, enum: [AWAITING_ROUTE, AWAITING_AS4, DELIVERED, NOT_APPLICABLE, MISSING_CORRELATION, HISTORICAL_TRANSMITTED], description: Invoice AS4 gate state; non-invoice reports are not subject to this gate. HISTORICAL_TRANSMITTED preserves a previously transmitted invoice report without a new gate record.}
+        deliveryReason: {type: [string, 'null'], description: Safe reason why invoice reporting awaits verified delivery.}
+        deliveryExecutionId: {type: [string, 'null'], format: uuid, description: Immutable source execution correlated to the delivery receipt.}
+        as4MessageId: {type: [string, 'null'], description: Verified outbound AS4 message identifier; null before delivery.}
+        as4ReceiptId: {type: [string, 'null'], description: Verified native AS4 receipt identifier; queue acceptance never supplies this value.}
+        as4DeliveredAt: {type: [string, 'null'], format: date-time, description: Corroborated successful transport delivery time.}
     WebhookDocumentNotification:
+      description: "Signed document-reference event sent to an active subscription."
       type: object
       additionalProperties: false
       required: [specVersion, eventType, eventSchema, eventId, deliveryId, occurredAt, documentTraceId, data]
       properties:
         specVersion: {type: string, const: '1.0', description: Envelope version.}
-        eventType: {$ref: '#/components/schemas/WebhookEventType'}
+        eventType: {$ref: '#/components/schemas/WebhookEventType', description: "Client event discriminator controlling payload schema and subscription matching."}
         eventSchema: {type: string, description: "client. + lowercase eventType with underscores replaced by hyphens + .v1", example: client.document-intake-accepted.v1}
         eventId: {type: string, format: uuid, description: Stable source event ID.}
         deliveryId: {type: string, format: uuid, description: Delivery ID retained on retry.}
         occurredAt: {type: string, format: date-time, description: Source event time.}
         documentTraceId: {type: string, format: uuid, description: Document reference for Client API reads.}
         data:
+          description: "Event data: document reference for notifications or challenge for endpoint verification."
           type: object
           additionalProperties: false
           required: [documentTraceId]
           properties:
             documentTraceId: {type: string, format: uuid, description: Same document reference as the top-level field.}
     WebhookVerificationNotification:
+      description: "Signed challenge; receiver must echo only the exact challenge object."
       type: object
       additionalProperties: false
       required: [specVersion, eventType, eventSchema, eventId, deliveryId, occurredAt, data]
       properties:
-        specVersion: {type: string, const: '1.0'}
-        eventType: {type: string, const: WEBHOOK_ENDPOINT_VERIFICATION}
-        eventSchema: {type: string, const: client.webhook-endpoint-verification.v1}
-        eventId: {type: string, format: uuid}
-        deliveryId: {type: string, format: uuid}
+        specVersion: {type: string, const: '1.0', description: "Webhook JSON envelope version, currently 1.0."}
+        eventType: {type: string, const: WEBHOOK_ENDPOINT_VERIFICATION, description: "Client event discriminator controlling payload schema and subscription matching."}
+        eventSchema: {type: string, const: client.webhook-endpoint-verification.v1, description: "Versioned schema identifier for the webhook payload."}
+        eventId: {type: string, format: uuid, description: "Immutable source event UUID; deduplicate notifications using this identity."}
+        deliveryId: {type: string, format: uuid, description: "Delivery UUID retained across automatic retries; operator replay creates a new ID."}
         occurredAt: {type: string, format: date-time, description: Verification attempt time.}
         data:
+          description: "Event data: document reference for notifications or challenge for endpoint verification."
           type: object
           additionalProperties: false
           required: [challenge]
           properties:
             challenge: {type: string, pattern: '^[A-Za-z0-9_-]{20,200}$', description: Echo exactly in the response.}
     WebhookChallengeResponse:
+      description: "Exact response required for successful endpoint verification."
       type: object
       additionalProperties: false
       required: [challenge]
       properties:
         challenge: {type: string, description: Exact data.challenge from the verification request.}
     WebhookEventType:
+      description: "Supported document lifecycle, processing, submission, MLS and inbound events. Excludes report business receipts and decision-leg completion."
       type: string
-      enum: [DOCUMENT_INTAKE_ACCEPTED, DOCUMENT_TYPE_PROFILE_DETECTED,
+      enum: [CDAR_EVENT_RECORDED, CDAR_CHANNEL_UPDATED, DOCUMENT_INTAKE_ACCEPTED, DOCUMENT_TYPE_PROFILE_DETECTED,
              DOCUMENT_DETECTION_FAILED, DOCUMENT_VALIDATION_SUCCEEDED, DOCUMENT_VALIDATION_FAILED,
              DOCUMENT_TRANSFORMATION_SUCCEEDED, DOCUMENT_TRANSFORMATION_FAILED,
              DOCUMENT_F1_PRODUCED, DOCUMENT_F1_FAILED, DOCUMENT_RECIPIENT_ROUTE_RESOLVED,
@@ -1328,111 +1479,125 @@ components:
              DOCUMENT_MLS_AP_RECEIVED, DOCUMENT_MLS_AB_RECEIVED, DOCUMENT_MLS_RE_RECEIVED, DOCUMENT_MLS_TIMED_OUT,
              DOCUMENT_MLS_LATE_RECORDED, DOCUMENT_INBOUND_AVAILABLE]
     WebhookEventSelection:
+      description: "Selection of all client events or an explicit nonempty event set."
       type: object
       required: [mode]
       properties:
-        mode: {type: string, enum: [ALL_CLIENT_EVENTS, SELECTED]}
+        mode: {type: string, enum: [ALL_CLIENT_EVENTS, SELECTED], description: "ALL_CLIENT_EVENTS subscribes to all supported events; SELECTED requires a nonempty eventTypes set."}
         eventTypes:
           type: array
           items: {$ref: '#/components/schemas/WebhookEventType'}
           description: Required and non-empty for SELECTED; must be absent or empty for ALL_CLIENT_EVENTS.
     WebhookSubscription:
+      description: "Company subscription settings and version; excludes all secret values."
       type: object
       required: [subscriptionId, name, endpoint, eventSelection, status, version, createdAt, updatedAt, customHeaderNames]
       properties:
-        subscriptionId: {type: string, format: uuid}
-        name: {type: string, maxLength: 100}
-        endpoint: {type: string, format: uri}
-        eventSelection: {$ref: '#/components/schemas/WebhookEventSelection'}
-        status: {type: string, enum: [DRAFT, VERIFYING, ACTIVE, INACTIVE, DELETED]}
-        version: {type: integer, format: int64}
-        createdAt: {type: string, format: date-time}
-        updatedAt: {type: string, format: date-time}
+        subscriptionId: {type: string, format: uuid, description: "Company-owned subscription UUID returned at creation."}
+        name: {type: string, maxLength: 100, description: "Human-readable subscription name, unique within the company; surrounding whitespace is stripped."}
+        endpoint: {type: string, format: uri, description: "Public HTTPS receiver URL. Private, loopback and other unsafe destinations are rejected."}
+        eventSelection: {$ref: '#/components/schemas/WebhookEventSelection', description: "Event filter; ALL_CLIENT_EVENTS requires no selected types, while SELECTED requires at least one supported type."}
+        status: {type: string, enum: [DRAFT, VERIFYING, ACTIVE, INACTIVE, DELETED], description: "DRAFT awaits verification; VERIFYING awaits challenge completion; ACTIVE receives events; INACTIVE is disabled; DELETED is a retained deleted record."}
+        version: {type: integer, format: int64, description: "Optimistic-lock resource version. Use its quoted ETag as If-Match for the next update."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
+        updatedAt: {type: string, format: date-time, description: "UTC instant of the latest persisted resource-state update."}
         customHeaderNames: {type: array, items: {type: string}, description: Header names only; values never leave the store.}
     WebhookSubscriptionPage:
+      description: "Cursor-paginated webhooksubscription records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/WebhookSubscription'}}
-        nextCursor: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/WebhookSubscription'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     WebhookSubscriptionCreate:
+      example: {"name": "Invoice notifications", "endpoint": "https://receiver.example.com/invoice-events", "eventSelection": {"mode": "ALL_CLIENT_EVENTS"}}
+      description: "Required subscription settings; the endpoint must pass destination validation."
       type: object
       required: [name, endpoint, eventSelection]
       properties:
-        name: {type: string, minLength: 1, maxLength: 100}
+        name: {type: string, minLength: 1, maxLength: 100, description: "Human-readable subscription name, unique within the company; surrounding whitespace is stripped."}
         endpoint: {type: string, format: uri, maxLength: 2048, pattern: '^https://.*', description: Public HTTPS endpoint; private and loopback addresses are rejected.}
-        eventSelection: {$ref: '#/components/schemas/WebhookEventSelection'}
+        eventSelection: {$ref: '#/components/schemas/WebhookEventSelection', description: "Event filter; ALL_CLIENT_EVENTS requires no selected types, while SELECTED requires at least one supported type."}
     WebhookSubscriptionUpdate:
+      description: "Partial update guarded by If-Match. All fields are optional; omission or null retains existing values."
       type: object
       properties:
-        name: {type: string, minLength: 1, maxLength: 100}
-        endpoint: {type: string, format: uri, maxLength: 2048, pattern: '^https://.*'}
-        eventSelection: {$ref: '#/components/schemas/WebhookEventSelection'}
-        active: {type: boolean, description: Activates a verified subscription or deactivates an active one.}
+        name: {type: [string, 'null'], minLength: 1, maxLength: 100, description: "Optional company-unique replacement name. Omission or null leaves it unchanged; supplying it clears verification."}
+        endpoint: {type: [string, 'null'], format: uri, maxLength: 2048, pattern: '^https://.*', description: "Optional replacement public HTTPS URL. Omission or null leaves it unchanged; supplying it clears verification."}
+        eventSelection: {anyOf: [{$ref: '#/components/schemas/WebhookEventSelection'}, {type: 'null'}], description: "Optional replacement event filter. Omission or null leaves it unchanged; supplying it clears verification."}
+        active: {type: [boolean, 'null'], description: Activates a verified subscription or deactivates an active one.}
     WebhookSecretIssued:
+      description: "New subscription with a non-replayable signing secret."
       type: object
       required: [subscription, secret, signatureVersion]
       properties:
-        subscription: {$ref: '#/components/schemas/WebhookSubscription'}
+        subscription: {$ref: '#/components/schemas/WebhookSubscription', description: "Created subscription settings and state; use its ID for verification."}
         secret: {type: string, description: "HMAC signing secret, shown exactly once."}
-        signatureVersion: {type: string}
+        signatureVersion: {type: string, description: "Signature format, currently v1; distinct from the numeric signing key version header."}
     WebhookVerification:
+      description: "Asynchronous verification-start response."
       type: object
       required: [subscriptionId, status]
       properties:
-        subscriptionId: {type: string, format: uuid}
-        status: {type: string, enum: [DRAFT, VERIFYING, ACTIVE, INACTIVE, DELETED]}
+        subscriptionId: {type: string, format: uuid, description: "Company-owned subscription UUID returned at creation."}
+        status: {type: string, enum: [DRAFT, VERIFYING, ACTIVE, INACTIVE, DELETED], description: "Verification-start state, normally VERIFYING. Poll the subscription for eventual ACTIVE or DRAFT."}
     WebhookSecretRotated:
+      description: "Replacement signing secret issued exactly once."
       type: object
       required: [subscriptionId, secret, signatureVersion, rotatedAt]
       properties:
-        subscriptionId: {type: string, format: uuid}
-        secret: {type: string}
-        signatureVersion: {type: string}
-        rotatedAt: {type: string, format: date-time}
+        subscriptionId: {type: string, format: uuid, description: "Company-owned subscription UUID returned at creation."}
+        secret: {type: string, description: "One-time signing secret. Store securely; it cannot be read back. Use UTF-8 bytes as the HMAC key without Base64 decoding."}
+        signatureVersion: {type: string, description: "Signature format, currently v1; distinct from the numeric signing key version header."}
+        rotatedAt: {type: string, format: date-time, description: "UTC instant when the replacement credential was issued."}
     WebhookDeliveryAttempt:
+      description: "One delivery HTTP attempt and possible retry schedule."
       type: object
       required: [attemptNumber, startedAt, outcome]
       properties:
-        attemptNumber: {type: integer, minimum: 1}
-        startedAt: {type: string, format: date-time}
-        completedAt: {type: [string, 'null'], format: date-time}
-        outcome: {type: string, enum: [PENDING, SUCCEEDED, RETRY_SCHEDULED, EXHAUSTED]}
-        httpStatus: {type: [integer, 'null'], minimum: 100, maximum: 599}
-        nextAttemptAt: {type: [string, 'null'], format: date-time}
+        attemptNumber: {type: integer, minimum: 1, description: "One-based attempt sequence within the stage or delivery."}
+        startedAt: {type: string, format: date-time, description: "UTC instant when this attempt began."}
+        completedAt: {type: [string, 'null'], format: date-time, description: "UTC instant when completion was recorded; a nullable field is null while unfinished."}
+        outcome: {type: string, enum: [PENDING, SUCCEEDED, RETRY_SCHEDULED, EXHAUSTED], description: "PENDING awaits completion; SUCCEEDED was acknowledged; RETRY_SCHEDULED will run later; EXHAUSTED has no automatic retry remaining."}
+        httpStatus: {type: [integer, 'null'], minimum: 100, maximum: 599, description: "Receiver HTTP status; null when no HTTP response was obtained."}
+        nextAttemptAt: {type: [string, 'null'], format: date-time, description: "UTC instant scheduled for retry; null when no next attempt is scheduled."}
     WebhookDelivery:
+      description: "Notification delivery with its attempt history."
       type: object
       required: [deliveryId, subscriptionId, eventId, eventType, status, createdAt, attempts]
       properties:
-        deliveryId: {type: string, format: uuid}
-        subscriptionId: {type: string, format: uuid}
-        eventId: {type: string, format: uuid}
-        eventType: {type: string}
-        status: {type: string, enum: [PENDING, IN_FLIGHT, DELIVERED, RETRY_SCHEDULED, EXHAUSTED]}
-        createdAt: {type: string, format: date-time}
-        attempts: {type: array, items: {$ref: '#/components/schemas/WebhookDeliveryAttempt'}}
+        deliveryId: {type: string, format: uuid, description: "Delivery UUID retained across automatic retries; operator replay creates a new ID."}
+        subscriptionId: {type: string, format: uuid, description: "Company-owned subscription UUID returned at creation."}
+        eventId: {type: string, format: uuid, description: "Immutable source event UUID; deduplicate notifications using this identity."}
+        eventType: {type: string, description: "Client event discriminator controlling payload schema and subscription matching."}
+        status: {type: string, enum: [PENDING, IN_FLIGHT, DELIVERED, RETRY_SCHEDULED, EXHAUSTED], description: "PENDING awaits dispatch; IN_FLIGHT is sending; DELIVERED was acknowledged; RETRY_SCHEDULED awaits retry; EXHAUSTED has stopped automatic delivery."}
+        createdAt: {type: string, format: date-time, description: "UTC instant when this resource record was created."}
+        attempts: {type: array, items: {$ref: '#/components/schemas/WebhookDeliveryAttempt'}, description: "Recorded attempts and outcomes; an individual failure need not be the terminal resource result."}
     WebhookDeliveryPage:
+      description: "Cursor-paginated webhookdelivery records for the company."
       type: object
       required: [items]
       properties:
-        items: {type: array, items: {$ref: '#/components/schemas/WebhookDelivery'}}
-        nextCursor: {type: [string, 'null']}
+        items: {type: array, items: {$ref: '#/components/schemas/WebhookDelivery'}, description: "Records in this page; an empty array is a successful result."}
+        nextCursor: {type: [string, 'null'], description: "Opaque continuation token for this endpoint and company. Pass unchanged as cursor; null means no further page."}
     Health:
+      description: "Spring Boot health probe object returned directly."
       type: object
       required: [status]
       properties:
-        status: {type: string, enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN]}
+        status: {type: string, enum: [UP, DOWN, OUT_OF_SERVICE, UNKNOWN], description: "UP passes the probe; DOWN or OUT_OF_SERVICE produces HTTP 503; UNKNOWN is undetermined."}
     Problem:
+      description: "RFC 9457 error with the stable FC error code and request correlation identifier."
       type: object
       required: [type, title, status, detail, code, retryable, correlationId]
       properties:
-        type: {type: string, format: uri}
-        title: {type: string}
-        status: {type: integer}
-        detail: {type: string}
+        type: {type: string, format: uri, description: "Problem type URI identifying the error class alongside the stable FC code."}
+        title: {type: string, description: "Stable English error-class summary without internal exception details."}
+        status: {type: integer, description: "HTTP error status corresponding to this problem response."}
+        detail: {type: string, description: "Safe English failure explanation without stack traces or credentials."}
         code: {type: string, pattern: '^FC-[A-Z]+-[0-9]{4}$', description: France Connector error catalogue code.}
-        retryable: {type: boolean}
-        correlationId: {type: string}
+        retryable: {type: boolean, description: "Whether this outcome is eligible for retry; does not confirm that a retry completed."}
+        correlationId: {type: string, description: "Request or action identifier connecting API, audit and integration evidence."}
   responses:
     ValidationFailed:
       description: FC-REQUEST-1001 request validation failed.
@@ -1441,11 +1606,11 @@ components:
       description: FC-REQUEST-1002 content type not supported.
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
     PayloadTooLarge:
-      description: FC-REQUEST-1003 request payload too large (the single product limit is 100 MiB).
+      description: FC-REQUEST-1003 payload too large. Document intake permits 100 MiB; F10 source permits 10 MiB.
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
     AuthenticationFailed:
       description: FC-AUTHN-1001 authentication failed.
-      headers: {WWW-Authenticate: {schema: {type: string}}}
+      headers: {WWW-Authenticate: {description: "Bearer challenge identifying the required authentication scheme.", schema: {type: string}}}
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
     PermissionDenied:
       description: FC-AUTHZ-1001 permission denied.

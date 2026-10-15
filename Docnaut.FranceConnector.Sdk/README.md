@@ -4,7 +4,7 @@ An MIT-licensed .NET 10 library for calling the France Connector Client API from
 It handles OAuth client credentials, request construction, file transfers and response disposal.
 It depends only on .NET libraries: no additional NuGet packages or ASP.NET runtime are required.
 
-The SDK exposes 26 named operations for accounts, documents, invoice decisions, payments, reports,
+The SDK exposes 26 named operations for accounts, documents, invoice decisions, CDAR lifecycle events, reports,
 Peppol facts and webhook subscriptions/deliveries. It preserves JSON responses so applications can
 read the fields they need. Request body schemas and business outcomes come from the connected
 service's API documentation; the SDK does not define replacement business models.
@@ -91,9 +91,9 @@ or routes.
 | Group | Operation IDs |
 |---|---|
 | Account | `getClientProfile`, `getClientConfiguration`, `replaceClientConfiguration`, `rotateOwnServiceClientSecret` |
-| Documents | `createDocumentIntake`, `listDocuments`, `getDocument`, `getDocumentProcessing`, `listDocumentEvents`, `listDocumentArtifacts`, `createArtifactAccess`, `listPeppolFacts` |
+| Documents | `createDocumentIntake`, `listDocuments`, `getDocument`, `getDocumentProcessing`, `listDocumentEvents`, `listDocumentLifecycleEvents`, `listDocumentArtifacts`, `createArtifactAccess`, `listPeppolFacts` |
 | Decisions | `decideInboundInvoice`, `getInboundInvoiceDecision` |
-| Reports | `registerInvoicePayment`, `submitReportingTransmission`, `getReport`, `getReportReceipts` |
+| Reports | `submitReportingTransmission`, `getReport`, `getReportReceipts` |
 | Webhooks | `listClientWebhookSubscriptions`, `createClientWebhookSubscription`, `getClientWebhookSubscription`, `updateClientWebhookSubscription`, `verifyClientWebhookSubscription`, `rotateClientWebhookSecret`, `listClientWebhookDeliveries`, `getClientWebhookDelivery` |
 
 ## Request values and pagination
@@ -147,7 +147,7 @@ if (current.IsSuccess && current.Headers.TryGetValue("ETag", out string? etag))
 ```
 
 The file must contain the complete preference request object documented by your service. The same
-`Body` property carries invoice decision/payment and webhook request objects.
+`Body` property carries invoice decision and webhook request objects.
 
 Operations whose `RequiresIdempotencyKey` is true require a caller-supplied `IdempotencyKey`.
 A UUID string is suitable, and invoice decisions specifically require one. Preserve the key and
@@ -172,6 +172,23 @@ await using var intake = await client.ExecuteAsync(new ApiRequest("createDocumen
 Documents accept `application/xml`, `text/xml` or `application/pdf`. Filenames must not contain
 directory components. Omitted filenames default to `document.xml`; an omitted content type defaults
 to `application/xml`, so specify both explicitly for PDF files.
+
+For a collection/payment declaration, upload the original CDAR 212 XML through `createDocumentIntake`
+using the same multipart `source` flow above (for example `File.OpenRead("cdar-212.xml")`).
+No JSON payment request is supported. The XML must contain the actual invoice identity and collection facts;
+the SDK sends the supplied document unchanged.
+
+Read the retained events with the public invoice or source CDAR document trace ID:
+
+```csharp
+await using var lifecycle = await client.ExecuteAsync(new ApiRequest("listDocumentLifecycleEvents")
+{
+    Path = new Dictionary<string, string> { ["documentTraceId"] = documentTraceId }
+}, cancellationToken);
+```
+
+Inspect `lifecycle.Body` for the event and its independent channel results. Intake acceptance and transport
+success do not establish remote business acceptance, and a 212 event does not imply full invoice payment.
 
 `submitReportingTransmission` sends an XML `source` part plus a JSON `metadata` part supplied through
 `Body`:

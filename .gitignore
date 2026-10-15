@@ -9,3 +9,5 @@ appsettings.Local.json
 .env.*
 !.env.example
 **/appsettings.*.local.json
+
+.tmp/

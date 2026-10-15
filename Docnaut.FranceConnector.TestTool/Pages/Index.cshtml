@@ -50,6 +50,10 @@
         {
             <label asp-for="Input.Upload">Source file</label><input asp-for="Input.Upload" type="file" required />
             <small>Up to 100 MiB for documents; 10 MiB for reporting XML.</small>
+            @if (selected.Id == "createDocumentIntake")
+            {
+                <small>For a collection/payment declaration, upload the original CDAR 212 XML. Read lifecycle events using the invoice or source document trace ID to inspect its channels.</small>
+            }
         }
         <button type="submit">Send request</button>
     </form>
