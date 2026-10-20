@@ -8,7 +8,11 @@ made by the backend. Start it using the [quick start](../README.md#quick-start).
 1. Select Sandbox or Production and enter that environment's client ID and secret.
 2. After login, confirm the environment shown beside **Sign out**.
 3. Choose **Read profile** and select **Send request**.
-4. Inspect the HTTP status, selected response headers and response body below the form.
+4. Inspect the HTTP status and expand **Response headers** below the form. **Pretty JSON** formats the response
+   and **Copy JSON** copies it. **Results** displays objects as detail fields and collections as tables or lists.
+   Nested values remain visible. Large results show a limited preview; Pretty JSON includes the entire body.
+   High-precision numbers remain exact in Pretty JSON and disable the structured preview to avoid rounding.
+   Non-JSON and empty responses show an explanatory message. Without JavaScript, the original response text remains visible.
 
 A successful login confirms authentication; it does not prove permission to execute every operation.
 An API error is shown with its HTTP status and returned body. Downloads are returned as attachments, with a

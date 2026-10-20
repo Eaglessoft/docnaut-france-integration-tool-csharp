@@ -6,9 +6,10 @@
     <title>@ViewData["Title"] · Docnaut Client API</title>
     <link rel="stylesheet" href="~/bootstrap.min.css" />
     <link rel="stylesheet" href="~/site.css" />
+    <script src="~/response-viewer.js" defer></script>
 </head>
 <body>
-<header><a asp-page="/Index" class="brand"><img src="~/docnaut-logo.webp" alt="Docnaut" width="140" /> <span>Client API</span></a><span>Integration test tool</span></header>
+<header><a asp-page="/Index" class="brand"><img src="~/docnaut-logo.webp" alt="Docnaut" width="140" /> <span>Client API</span></a><a class="tools-link" href="https://tools.docnaut.com/">Docnaut Tools <span aria-hidden="true">↗</span></a></header>
 <main>@RenderBody()</main>
 </body>
 </html>

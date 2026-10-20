@@ -61,12 +61,12 @@
 @if (Model.Error != null) { <div class="error" role="alert">@Model.Error</div> }
 @if (Model.ResponseStatusCode != null)
 {
-    <section class="response"><h2>Response <span class="status">@Model.ResponseStatusCode</span></h2>
+    <section class="response"><h2>Response <span class="status">HTTP @Model.ResponseStatusCode</span></h2>
     @if (Model.ResponseHeaders != null)
     {
-        <dl>@foreach (var header in Model.ResponseHeaders) { <dt>@header.Key</dt><dd>@header.Value</dd> }</dl>
+        <details class="response-headers"><summary>Response headers</summary><dl>@foreach (var header in Model.ResponseHeaders) { <dt>@header.Key</dt><dd>@header.Value</dd> }</dl></details>
     }
-    <pre>@Model.ResponseBody</pre></section>
+    <div data-response-viewer><pre class="response-source">@Model.ResponseBody</pre></div></section>
 }
 </section>
 </div>

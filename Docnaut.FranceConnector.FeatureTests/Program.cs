@@ -141,12 +141,12 @@ try
             "Anonymous redirect retains the context path");
     }
     var login = await Page("/Login");
-    foreach (var asset in new[] { "/bootstrap.min.css", "/site.css", "/docnaut-logo.webp" })
+    foreach (var asset in new[] { "/bootstrap.min.css", "/site.css", "/docnaut-logo.webp", "/response-viewer.js" })
     {
         Check(login.Contains($"\"{AppPath(asset)}\"", StringComparison.Ordinal), $"Login references context asset {asset}");
         using var response = await browser.GetAsync(AppPath(asset));
         Check(response.IsSuccessStatusCode, $"Context asset {asset} is served");
-        Check(response.Content.Headers.ContentType?.MediaType == (asset.EndsWith(".css") ? "text/css" : "image/webp"),
+        Check(response.Content.Headers.ContentType?.MediaType == (asset.EndsWith(".css") ? "text/css" : asset.EndsWith(".js") ? "text/javascript" : "image/webp"),
             $"Context asset {asset} has the expected content type");
     }
     Check(!login.Contains("test-secret"), "Login page does not contain a secret");
@@ -187,7 +187,14 @@ try
     Check(calls.Count == before, "CSRF rejection cannot reach Connector");
     using (var result = await Post("/?handler=Execute", index, new()
         { ["Input.OperationId"]="replaceClientConfiguration", ["Input.Body"]="{\"preference\":true}", ["Input.IfMatch"]="\"4\"" }))
+    {
         Check(result.StatusCode == HttpStatusCode.OK, "JSON operation renders response");
+        var responseHtml = await result.Content.ReadAsStringAsync();
+        Check(responseHtml.Contains("data-response-viewer") && responseHtml.Contains("response-source")
+            && responseHtml.Contains("fixture-ok"), "Response viewer retains encoded response text for no-script access");
+        Check(result.Headers.GetValues("Content-Security-Policy").Single().Contains("script-src 'self'"),
+            "CSP allows the locally bundled response viewer");
+    }
     Check(calls.Last() is { Environment: "Sandbox", Method: "PUT", Path: "configuration", Body: "{\"preference\":true}" },
         "Selected sandbox and exact JSON reach API");
     index = await Page("/");
@@ -303,7 +310,8 @@ async Task<string> Page(string path)
     foreach (Match match in Regex.Matches(html, "(?:href|src|action)=\"([^\"]*)\""))
     {
         var value = WebUtility.HtmlDecode(match.Groups[1].Value);
-        if (value.Length > 0 && !value.StartsWith('#')) CheckContextUrl(new Uri(browser.BaseAddress!, value));
+        if (value.Length > 0 && !value.StartsWith('#') && value != "https://tools.docnaut.com/")
+            CheckContextUrl(new Uri(browser.BaseAddress!, value));
     }
     return html;
 }

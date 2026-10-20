@@ -6,7 +6,8 @@ A .NET SDK and a small web console for building and testing Client API integrati
 Use the SDK in your own backend, or use the console to try requests without writing application code.
 
 The SDK uses .NET libraries only. The console uses ASP.NET Core Razor Pages and bundled CSS.
-There are no external NuGet packages, browser JavaScript, Node.js requirements or database requirements.
+There are no external NuGet packages, Node.js requirements or database requirements. A bundled browser script
+adds response tabs, formatted JSON copying and structured result views; requests still run on the backend.
 
 ## Quick start
 
